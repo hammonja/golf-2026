@@ -7,6 +7,11 @@
 
 /* Touch scoring is a separate presentation of the same scorecard. */
 .mobile-hole-editor,.mobile-score-mode,.mobile-standings{display:none}
+.earnings-cell strong{display:block;font-size:19px;color:var(--green)}
+.earnings-cell small,.mobile-earnings small{display:block;font-size:10px;color:#657660;margin-top:5px}
+.earnings-note{line-height:1.8}
+.mobile-earnings{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);margin-top:13px;padding-top:13px;font-size:12px}
+.mobile-earnings>div{text-align:right}.mobile-earnings strong{font-size:20px}
 @media(max-width:760px){
   body{padding-bottom:calc(76px + env(safe-area-inset-bottom));font-size:15px}
   .header{min-height:70px;padding:14px 5%;flex-wrap:nowrap}

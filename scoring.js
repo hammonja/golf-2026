@@ -43,7 +43,46 @@
     }
     return { totals: values, holes };
   }
-  const api = { played, strokes, hole, totals, placingPoints, competition };
+  function earnings(rounds, handicaps, teams, formats, standings) {
+    const players = handicaps.map(() => ({ earned: 0, projected: 0, breakdown: [] }));
+    let tiedPrizes = 0;
+    const award = (p, amount, final, label) => {
+      players[p][final ? 'earned' : 'projected'] += amount;
+      players[p].breakdown.push({ label, amount, final });
+    };
+    let started = false;
+    const results = rounds.map((r,i) => competition(r,handicaps,teams[i],formats[i]));
+    results.forEach((result,i) => {
+      if (!result.holes) return;
+      started = true;
+      const values = formats[i] === 'solo' ? result.ranking : result.totals;
+      const best = formats[i] === 'scramble' ? Math.min(...values) : Math.max(...values);
+      const winners = values.map((v,p) => v===best ? p : -1).filter(p=>p!==-1);
+      if (winners.length !== 1) { tiedPrizes += formats[i] === 'solo' ? 20 : 40; return; }
+      const recipients = formats[i] === 'solo' ? winners : teams[i][winners[0]];
+      recipients.forEach(p => award(p,20,result.holes===18 && rounds[i].verified,`Round ${i+1}`));
+    });
+    if (started || rounds.some(r=>r.ctp!==null)) {
+      const final = results.every(r=>r.holes===18) && rounds.every(r=>r.verified && r.ctp!==null);
+      const prizes = [40,20,0,0];
+      standings.forEach(row => {
+        const above = standings.filter(other=>other.points>row.points).length;
+        const tied = standings.filter(other=>other.points===row.points).length;
+        if (tied === 1 && prizes[above]) award(row.p,prizes[above],final,'Overall');
+      });
+      // Count each tied prize group once. Prize ties remain unresolved, as in the rulebook.
+      const seen = new Set();
+      standings.forEach(row => {
+        if (seen.has(row.points)) return;
+        seen.add(row.points);
+        const above = standings.filter(other=>other.points>row.points).length;
+        const tied = standings.filter(other=>other.points===row.points).length;
+        if (tied > 1) tiedPrizes += prizes.slice(above,above+tied).reduce((a,b)=>a+b,0);
+      });
+    }
+    return { players, tiedPrizes };
+  }
+  const api = { played, strokes, hole, totals, placingPoints, competition, earnings };
   if (typeof module !== 'undefined') module.exports = api;
   else root.Golf = api;
 })(typeof window === 'undefined' ? globalThis : window);
