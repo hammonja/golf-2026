@@ -1,6 +1,7 @@
 const PLAYERS = ['James Hammond', 'Ben Nowak', 'Mark Shaw', 'Owen Shaw'];
 const SHORT = ['James', 'Ben', 'Mark', 'Owen'];
 const INITIALS = ['JH', 'BN', 'MS', 'OS'];
+const PLAYER_PHOTOS = ['james-hammond.png', 'player-photo-4.png', 'player-photo-3.png', 'player-photo-2.png'];
 const COURSES = ['Ombria', "O’Connor", 'Faldo', 'Salgados'];
 const FORMATS = ['match', 'best', 'solo', 'scramble'];
 const TITLES = ['2v2 Matchplay', '2v2 Best Ball', 'Individual Stableford', '2v2 Scramble'];
@@ -41,7 +42,9 @@ function movementMarkup(p) {
   const description = change ? `${change > 0 ? 'Up' : 'Down'} ${Math.abs(change)} ${Math.abs(change) === 1 ? 'place' : 'places'} since the last position change` : 'No position change';
   return `<span class="rank-movement ${change > 0 ? 'rank-up' : change < 0 ? 'rank-down' : 'rank-steady'}" title="${description}" aria-label="${description}"><span aria-hidden="true">${change > 0 ? '▲' : change < 0 ? '▼' : '–'}${change ? ` ${Math.abs(change)}` : ''}</span></span>`;
 }
-function avatar(p) { return `<span class="avatar avatar-${p}">${INITIALS[p]}</span>`; }
+function avatar(p) {
+  return `<span class="avatar avatar-${p} avatar-photo"><img src="/assets/${PLAYER_PHOTOS[p]}" alt="${PLAYERS[p]}" decoding="async"></span>`;
+}
 function overall() {
   const rows = PLAYERS.map((name, p) => ({ name, p, gross: 0, net: 0, stable: 0, holes: 0, bonus: 0, points: 0, round: [] }));
   data.rounds.forEach((r, ri) => {

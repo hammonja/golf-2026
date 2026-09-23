@@ -28,6 +28,10 @@ ROUTES = {
     "/assets/faldo-scorecard.pdf": ("assets/faldo-scorecard.pdf", "application/pdf"),
     "/assets/oconnor-course.png": ("assets/oconnor-course.png", "image/png"),
     "/assets/oconnor-scorecard.pdf": ("assets/oconnor-scorecard.pdf", "application/pdf"),
+    "/assets/james-hammond.png": ("assets/james-hammond.png", "image/png"),
+    "/assets/player-photo-2.png": ("assets/player-photo-2.png", "image/png"),
+    "/assets/player-photo-3.png": ("assets/player-photo-3.png", "image/png"),
+    "/assets/player-photo-4.png": ("assets/player-photo-4.png", "image/png"),
 }
 
 
