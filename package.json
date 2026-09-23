@@ -2,5 +2,12 @@
   "name": "portugal-2026",
   "version": "1.0.0",
   "private": true,
-  "scripts": { "start": "python app.py", "dev": "python app.py", "test": "node tests.js" }
+  "scripts": {
+    "start": "python app.py",
+    "dev": "python app.py",
+    "test": "node tests.js && node test-controls.js"
+  },
+  "devDependencies": {
+    "jsdom": "^22.1.0"
+  }
 }

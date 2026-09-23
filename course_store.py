@@ -41,6 +41,23 @@ class CourseStore:
             db.execute("CREATE TABLE IF NOT EXISTS assets (course INTEGER, kind TEXT, mime TEXT, body BLOB, PRIMARY KEY(course,kind))")
             for course in DEFAULTS:
                 db.execute("INSERT OR IGNORE INTO courses VALUES (?,?)", (course["id"], json.dumps(course)))
+                # Existing deployments also receive newly bundled references.
+                # Never replace an uploaded document, a tee, or other user edits.
+                saved = json.loads(db.execute("SELECT content FROM courses WHERE id=?", (course["id"],)).fetchone()[0])
+                changed = False
+                for kind, asset in course["assets"].items():
+                    if kind not in saved["assets"]:
+                        saved["assets"][kind] = asset
+                        changed = True
+                if not saved.get("source") and course.get("source"):
+                    saved["source"] = course["source"]
+                    changed = True
+                if not saved["tees"] and course["tees"]:
+                    saved["tees"] = course["tees"]
+                    changed = True
+                if changed:
+                    saved["version"] += 1
+                    db.execute("UPDATE courses SET content=? WHERE id=?", (json.dumps(saved), course["id"]))
 
     @contextmanager
     def connect(self):

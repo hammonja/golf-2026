@@ -4,6 +4,7 @@ import os
 import json
 import re
 import sqlite3
+import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -21,7 +22,25 @@ ROUTES = {
     "/courses.js": ("courses.js", "text/javascript; charset=utf-8"),
     "/assets/ombria-course.svg": ("assets/ombria-course.svg", "image/svg+xml"),
     "/assets/ombria-scorecard.svg": ("assets/ombria-scorecard.svg", "image/svg+xml"),
+    "/assets/salgados-course.gif": ("assets/salgados-course.gif", "image/gif"),
+    "/assets/salgados-scorecard.pdf": ("assets/salgados-scorecard.pdf", "application/pdf"),
+    "/assets/faldo-course.png": ("assets/faldo-course.png", "image/png"),
+    "/assets/faldo-scorecard.pdf": ("assets/faldo-scorecard.pdf", "application/pdf"),
+    "/assets/oconnor-course.png": ("assets/oconnor-course.png", "image/png"),
+    "/assets/oconnor-scorecard.pdf": ("assets/oconnor-scorecard.pdf", "application/pdf"),
 }
+
+
+def versioned_index(body):
+    """Keep cached JS/CSS in sync with each deployed HTML response."""
+    html = body.decode("utf-8")
+    def version(match):
+        attribute, url = match.groups()
+        filename = ROUTES[url][0]
+        digest = hashlib.sha256((ROOT / filename).read_bytes()).hexdigest()[:16]
+        return f'{attribute}="{url}?v={digest}"'
+    html = re.sub(r'(src|href)="(/(?:app|courses|mobile|scoring)\.js|/style\.css)"', version, html)
+    return html.encode("utf-8")
 
 
 class GolfHandler(BaseHTTPRequestHandler):
@@ -103,6 +122,8 @@ class GolfHandler(BaseHTTPRequestHandler):
         filename, content_type = route
         try:
             body = (ROOT / filename).read_bytes()
+            if filename == "index.html":
+                body = versioned_index(body)
         except OSError:
             self.send_error(500, "Website file unavailable")
             return
