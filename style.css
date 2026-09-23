@@ -10,6 +10,9 @@
 .earnings-cell strong{display:block;font-size:19px;color:var(--green)}
 .earnings-cell small,.mobile-earnings small{display:block;font-size:10px;color:#657660;margin-top:5px}
 .earnings-note{line-height:1.8}
+.rank-movement{display:block;min-width:28px;font-size:10px;font-weight:700;margin-top:5px;white-space:nowrap}
+.rank-up{color:#22763e}.rank-down{color:#c73629}.rank-steady{color:#889285}
+.standing-top .standing-rank{width:29px;text-align:center}
 .mobile-earnings{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);margin-top:13px;padding-top:13px;font-size:12px}
 .mobile-earnings>div{text-align:right}.mobile-earnings strong{font-size:20px}
 @media(max-width:760px){

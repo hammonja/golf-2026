@@ -106,7 +106,25 @@ assert.equal(prizes.tiedPrizes,100); // £40 scramble and £60 overall.
 assert.equal(prizes.players[1].earned+prizes.players[1].projected,0);
 delete app.querySelector;
 vm.runInContext('data=empty();page="dashboard";render();',context);
-assert(app.innerHTML.includes('EARNINGS'));
+assert(app.innerHTML.includes('PRIZE MONEY WON'));
 assert(app.innerHTML.includes('Earnings are prize money before'));
 assert(app.innerHTML.includes('£0'));
 console.log('Earnings checks passed: £200 pot, pending bonuses, unverified courses, ties and leaderboard rendering.');
+vm.runInContext('data=empty();updateRankMovement();',context);
+assert.equal(vm.runInContext('previousRanks',context),null);
+vm.runInContext('data.rounds[0].scores.forEach((s,p)=>s[0]=p+3);save();',context);
+assert.equal(vm.runInContext('rankMovement.join(",")',context),'0,0,0,0');
+assert.equal(vm.runInContext('overall().map(r=>r.p).join(",")',context),'0,1,2,3');
+vm.runInContext('data.handicaps[3]=54;save();',context);
+assert.equal(vm.runInContext('rankMovement.join(",")',context),'0,-1,-1,3');
+assert.equal(vm.runInContext('overall().map(r=>r.p).join(",")',context),'0,3,1,2');
+assert(vm.runInContext('movementMarkup(3)',context).includes('rank-up'));
+assert(vm.runInContext('movementMarkup(1)',context).includes('rank-down'));
+vm.runInContext('render();save();',context);
+assert.equal(vm.runInContext('rankMovement[3]',context),3); // Navigation/no-op save preserves last movement.
+vm.runInContext('data.rounds[3].ctp=3;save();',context);
+assert.equal(vm.runInContext('overall()[0].p',context),3);
+assert.equal(vm.runInContext('rankMovement.join(",")',context),'-1,0,0,0');
+vm.runInContext('data=empty();save();',context);
+assert.equal(vm.runInContext('rankMovement.join(",")',context),'0,0,0,0');
+console.log('Leaderboard checks passed: automatic ordering, shared ranks, up/down movement, bonuses and reset.');
