@@ -1,0 +1,6 @@
+{
+  "name": "portugal-2026",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": { "start": "node server.js", "dev": "node server.js", "test": "node tests.js" }
+}
