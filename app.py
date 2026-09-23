@@ -49,7 +49,7 @@ class GolfHandler(BaseHTTPRequestHandler):
 
 def main():
     host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "3000"))
+    port = int(os.environ.get("PORT", "4050"))
     with ThreadingHTTPServer((host, port), GolfHandler) as server:
         print(f"Portugal 2026: http://localhost:{port}", flush=True)
         print("Press Ctrl+C to stop. Scores are saved in each browser.", flush=True)
