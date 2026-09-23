@@ -36,7 +36,7 @@ async function main() {
   window.document.querySelector('[data-action="setup"]').click();
   assert(window.document.querySelector('.course-library-setup').textContent.includes('Official Salgados reference'));
   assert(window.document.querySelector('.course-library-setup img').getAttribute('src').startsWith('/assets/salgados-course.gif'));
-  for (const [round,slug,total,firstDistance,pinHole] of [[1,'oconnor',5939,497,17],[2,'faldo',5858,388,16]]) {
+  for (const [round,slug,total,firstDistance,pinHole] of [[1,'oconnor',5939,497,17],[2,'faldo',5858,388,16],[3,'salgados',5615,270,17]]) {
     window.document.querySelector(`[data-round="${round}"]`).click();
     const selector=window.document.querySelector('#course-tee');
     selector.value=slug+'-yellow';
@@ -47,7 +47,7 @@ async function main() {
     assert(window.document.querySelector('.hole-facts').textContent.includes(`${firstDistance} m`));
     assert(window.document.querySelector('.pin-card').textContent.includes(`hole ${pinHole}`));
     assert(window.document.querySelector(`a[href="/assets/${slug}-scorecard.pdf"]`));
-    assert(window.document.querySelector(`a[href="/assets/${slug}-course.png"]`));
+    assert(window.document.querySelector(`a[href="/assets/${slug}-course.${slug==='salgados' ? 'gif' : 'png'}"]`));
     assert.equal(window.document.querySelectorAll('.score-panel > .notice').length,0);
   }
   assert.deepEqual(errors,[]);

@@ -122,7 +122,11 @@ class WebsiteTests(unittest.TestCase):
             course = store.list()[3]
             self.assertEqual(course["assets"]["scorecard"]["type"], "application/pdf")
             self.assertIn("Older layout", course["assets"]["map"]["note"])
-            self.assertEqual(course["tees"], [])
+            self.assertEqual([sum(t["distances"]) for t in course["tees"]], [6033,5615,5119,4684,3837,2864])
+            course.update(tees=[])
+            with store.connect() as db:
+                db.execute("UPDATE courses SET content=? WHERE id=3", (json.dumps(course),))
+            self.assertEqual(len(CourseStore(directory + "/courses.sqlite3").list()[3]["tees"]), 6)
             # Simulate a deployment created before Salgados was bundled, with a custom map/tee.
             custom_map = {"url":"/api/courses/3/assets/map","name":"My map","type":"image/png"}
             course.update(assets={"map":custom_map},source="",tees=[DEFAULTS[0]["tees"][0]],version=7)

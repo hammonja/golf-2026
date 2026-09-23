@@ -67,3 +67,5 @@
   .player-grid{grid-template-columns:1fr}.player-card h2{min-height:0;font-size:23px}.player-card p{font-size:13px}.player-card>.avatar{float:right;margin-bottom:0}.player-card .handicap-control input{font-size:28px!important}.explanation p,.rule-card p{font-size:14px}
   footer .text-button{font-size:12px}#toast{bottom:calc(82px + env(safe-area-inset-bottom));width:max-content;max-width:90vw;font-size:12px}
 }
+
+.player-card .player-bio{font-size:14px;line-height:1.65;color:var(--ink);margin:0 0 22px}

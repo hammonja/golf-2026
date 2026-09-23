@@ -45,6 +45,9 @@ class CourseStore:
                 # Never replace an uploaded document, a tee, or other user edits.
                 saved = json.loads(db.execute("SELECT content FROM courses WHERE id=?", (course["id"],)).fetchone()[0])
                 changed = False
+                if course.get("teeNote") and not saved.get("teeNote"):
+                    saved["teeNote"] = course["teeNote"]
+                    changed = True
                 for kind, asset in course["assets"].items():
                     if kind not in saved["assets"]:
                         saved["assets"][kind] = asset
