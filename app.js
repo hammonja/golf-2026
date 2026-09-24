@@ -65,6 +65,7 @@ function shell(content) {
   decorateCourses();
   decorateMobile();
   Live.access();
+  if (typeof PWA !== 'undefined') PWA.decorate();
 }
 function compCard(ri) {
   const r = data.rounds[ri], c = Golf.competition(r, data.handicaps, TEAMS[ri], FORMATS[ri]);

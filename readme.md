@@ -41,6 +41,23 @@ Timestamps describe when entries were saved, which can differ from the order hol
 
 ## Hosting the live version
 
+### Install on iPhone or Android
+
+The HTTPS site is an installable Progressive Web App, named **Portugal 26** on the home screen. Open **Install app** on the site for instructions, or the browser's native install prompt when available.
+
+- **iPhone / iPad:** open the site in Safari, choose **Share → Add to Home Screen**, leave **Open as Web App** on if shown, then **Add**.
+- **Android:** open the site in Chrome, choose **Install app** on the site or **⋮ → Add to Home screen / Install app**, then confirm installation.
+
+Launch the new icon to open a standalone app window without the browser address bar. The phone's status bar may remain. No App Store or Google Play download is needed. The layout accounts for phone notches, landscape cutouts and the home indicator; installation guidance disappears in the installed window. Chrome may require a little time and interaction before offering its native install prompt, so manual instructions remain available.
+
+Scores, login and history use the same server as the website. An internet connection is required; this change does not add offline scoring or cache score/authentication responses. iOS may use a separate login session for the home-screen app, so admins should sign in there. There is deliberately no service worker caching old application code; reopening the app loads the deployed version using the existing asset hashes and revalidation headers.
+
+Deploy all files, including `manifest.webmanifest`, `pwa.js` and the four PNG icons in `assets`, and **restart the Python service** so its asset routes are updated. In PiDash, use **Stop**, wait for **INACTIVE**, then **Start** if the Restart button does not restart the process.
+
+Installation follows [Apple's Home Screen web app support](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/) and [Chrome's installability criteria](https://web.dev/articles/install-criteria). Physical iPhone and Android installation should be checked after deployment; desktop browser tests do not reproduce the OS installation UI.
+
+### Server configuration
+
 Keep the existing `COURSE_DB` path so existing course uploads are preserved. The new score and event tables are added automatically. Run a single Python server process against that database (multiple browser clients are supported). Restart the service after deploying the Python changes. Set `COOKIE_SECURE=1` when serving through HTTPS; leave it unset only for local HTTP development.
 
 The reverse proxy must forward `/api/events` as a streaming response: disable buffering, caching and compression for that route, and use a read timeout greater than 30 seconds (heartbeats arrive every 15 seconds). Do not cache `/api/*`. With Nginx, use `proxy_buffering off`, `proxy_cache off` and `proxy_read_timeout 60s` for `/api/events`. The application also sends `X-Accel-Buffering: no` and `Cache-Control: no-store`. Restrict direct access to the Python port when exposing it through a public HTTPS proxy. Standard-library `http.server` is intended for this small deployment behind a trusted proxy, not as an internet-facing production server.

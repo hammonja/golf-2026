@@ -71,8 +71,8 @@ class WebsiteTests(unittest.TestCase):
         from unittest.mock import patch
         original = (ROOT / "index.html").read_bytes()
         html = versioned_index(original).decode()
-        urls = re.findall(r'(?:src|href)="([^"]+)"', html)
-        self.assertEqual(len(urls), 6)
+        urls = re.findall(r'(?:src|href)="([^\"]+\.(?:js|css)\?[^\"]+)"', html)
+        self.assertEqual(len(urls), 7)
         for url in urls:
             self.assertRegex(url, r'\?v=[a-f0-9]{16}$')
             self.assertEqual(self.request(url)[0], 200)
@@ -80,6 +80,23 @@ class WebsiteTests(unittest.TestCase):
         self.assertEqual(versioned_index(original).decode(), html)
         with patch("pathlib.Path.read_bytes", return_value=b"changed deployment"):
             self.assertNotEqual(versioned_index(original).decode(), html)
+
+    def test_install_manifest_and_icons(self):
+        import struct
+        status, headers, body = self.request("/manifest.webmanifest")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "application/manifest+json")
+        manifest = json.loads(body)
+        self.assertEqual(manifest["display"], "standalone")
+        self.assertEqual(manifest["scope"], "/")
+        self.assertEqual(self.request(manifest["start_url"])[0], 200)
+        icons = manifest["icons"] + [{"src": "/assets/apple-touch-icon.png", "sizes": "180x180"}]
+        for icon in icons:
+            status, headers, body = self.request(icon["src"])
+            self.assertEqual(status, 200)
+            self.assertEqual(headers["Content-Type"], "image/png")
+            self.assertEqual(body[:8], b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(struct.unpack(">II", body[16:24]), tuple(map(int, icon["sizes"].split("x"))))
 
     def test_private_and_unknown_paths(self):
         for path in ("/app.py", "/.git/config", "/readme.md", "/scores.json", "/../app.py", "/%2e%2e/app.py", "/missing"):

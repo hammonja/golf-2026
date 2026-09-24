@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "Portugal 2026 · The Golf Getaway",
+  "short_name": "Portugal 26",
+  "description": "Live scores, leaderboards and scorecards for the Portugal 2026 golf getaway.",
+  "lang": "en-GB",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f6ef",
+  "theme_color": "#073f36",
+  "prefer_related_applications": false,
+  "icons": [
+    {"src": "/assets/app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/assets/app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/assets/app-icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

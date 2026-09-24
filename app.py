@@ -23,6 +23,12 @@ ROUTES = {
     "/style.css": ("style.css", "text/css; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/live.js": ("live.js", "text/javascript; charset=utf-8"),
+    "/pwa.js": ("pwa.js", "text/javascript; charset=utf-8"),
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "/assets/apple-touch-icon.png": ("assets/apple-touch-icon.png", "image/png"),
+    "/assets/app-icon-192.png": ("assets/app-icon-192.png", "image/png"),
+    "/assets/app-icon-512.png": ("assets/app-icon-512.png", "image/png"),
+    "/assets/app-icon-maskable-512.png": ("assets/app-icon-maskable-512.png", "image/png"),
     "/mobile.js": ("mobile.js", "text/javascript; charset=utf-8"),
     "/scoring.js": ("scoring.js", "text/javascript; charset=utf-8"),
     "/courses.js": ("courses.js", "text/javascript; charset=utf-8"),
@@ -49,7 +55,7 @@ def versioned_index(body):
         filename = ROUTES[url][0]
         digest = hashlib.sha256((ROOT / filename).read_bytes()).hexdigest()[:16]
         return f'{attribute}="{url}?v={digest}"'
-    html = re.sub(r'(src|href)="(/(?:app|live|courses|mobile|scoring)\.js|/style\.css)"', version, html)
+    html = re.sub(r'(src|href)="(/(?:app|live|pwa|courses|mobile|scoring)\.js|/style\.css)"', version, html)
     return html.encode("utf-8")
 
 

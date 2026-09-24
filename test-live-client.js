@@ -51,7 +51,7 @@ async function main() {
       return {ok:status<400,status,json:async()=>clone(result)};
     };
     const context=dom.getInternalVMContext();
-    for(const file of ['scoring.js','courses.js','mobile.js','live.js','app.js']) vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
+    for(const file of ['scoring.js','courses.js','mobile.js','live.js','pwa.js','app.js']) vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
     await tick(); await tick();
     return {dom,w,context,document:w.document};
   }

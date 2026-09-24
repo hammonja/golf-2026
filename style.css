@@ -82,4 +82,14 @@ button:disabled{cursor:default;opacity:.45}.text-button[hidden],[data-admin-only
 .login-dialog::backdrop{background:#092d25aa}.login-dialog h2{margin:12px 0;font-size:26px}.login-dialog p{font-size:13px;line-height:1.6;color:#586d60}
 .login-dialog label{display:block;margin:18px 0 7px;font-size:12px;font-weight:700}.login-dialog input{width:100%;border:1px solid #bdcdbb;border-radius:6px;padding:12px;background:#fffefa;color:var(--green)}
 .login-dialog .login-error{color:#a42f22;margin-top:14px}.login-actions{display:flex;justify-content:flex-end;gap:12px;margin-top:20px}
+/* Home-screen app: leave room for camera cutouts and the home indicator. */
+body{min-height:100vh;min-height:100dvh;padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);background:var(--green);z-index:20;pointer-events:none}
+.install-banner{max-width:1440px;margin:0 auto 8px;padding:10px 5%;display:flex;align-items:center;gap:12px}
+.install-banner img{border-radius:9px;flex-shrink:0}.install-banner p{margin:0;flex:1;font-size:12px;line-height:1.5}.install-banner strong{display:block}.install-banner p span{color:#586d60;font-size:11px}
+.install-banner .button{flex-shrink:0;min-height:44px;padding:10px 14px;background:transparent}
+.installed-app .install-banner{display:none}
+.login-dialog{max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 32px);overflow-y:auto}
+.install-dialog{width:min(480px,calc(100% - 32px))}.install-dialog h3{font-size:15px;margin:22px 0 8px}.install-dialog ol{padding-left:20px;margin:0;font-size:13px;line-height:1.7;color:#586d60}.install-dialog li+li{margin-top:6px}.install-dialog .install-note{padding-top:18px;margin-top:22px;border-top:1px solid var(--line);font-size:12px}
+@media(max-width:760px){.header nav{padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px))}.install-banner{gap:9px}.install-banner p{font-size:11px}.install-banner .button{font-size:11px;padding:10px 12px}}
 @media(max-width:760px){.header .trip-tag{display:none}.header .login-button{margin-left:auto;min-height:40px}.live-bar{font-size:10px;align-items:center}.live-bar .save-status{font-size:10px;text-align:right}.access-mode{max-width:55%}}
