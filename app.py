@@ -184,6 +184,25 @@ class GolfHandler(BaseHTTPRequestHandler):
         except (OSError, sqlite3.Error):
             self._json(500, {"error": "Could not complete login. Check server storage."})
 
+    def do_DELETE(self):
+        match = re.fullmatch(rf"/api/media/({MEDIA_ID})", urlsplit(self.path).path)
+        if not match:
+            self._json(404, {"error": "Not found."})
+            return
+        if not self._same_origin():
+            return
+        session = self._admin(write=True)
+        if not session:
+            return
+        try:
+            result = self.server.media.delete(match[1], session["id"])
+            self._publish()
+            self._json(200, result)
+        except MediaError as error:
+            self._json(error.status, {"error": str(error)})
+        except (OSError, sqlite3.Error):
+            self._json(503, {"error": "Deletion could not be completed. Please try again."})
+
     def do_PUT(self):
         path = urlsplit(self.path).path
         if re.fullmatch(rf"/api/media/uploads/({MEDIA_ID})", path):
@@ -277,7 +296,7 @@ class GolfHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(end - start + 1))
         self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "same-origin")
         disposition = "attachment" if urlsplit(self.path).query == "download=1" else "inline"
@@ -337,7 +356,7 @@ class GolfHandler(BaseHTTPRequestHandler):
                 elif match := re.fullmatch(rf"/api/media/({MEDIA_ID})/(file|thumbnail)", path):
                     asset, mime = self.server.media.asset(match[1], match[2] == "thumbnail")
                     if isinstance(asset, bytes):
-                        self._respond(200, asset, mime, include_body, {"Cache-Control": "public, max-age=31536000, immutable"})
+                        self._respond(200, asset, mime, include_body)
                     else:
                         self._media_file(asset, mime, include_body)
                 else:

@@ -1,5 +1,6 @@
 """Public media endpoints, durable resume, permissions, originals and metadata."""
 import copy
+import base64
 import hashlib
 import json
 import tempfile
@@ -9,6 +10,7 @@ import uuid
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 from app import GolfHandler, configure_server
 from media_store import MediaStore, PHOTO_LIMIT, matches_type
@@ -163,6 +165,76 @@ class MediaTests(unittest.TestCase):
             self.assertTrue(matches_type(mime, head))
         self.assertFalse(matches_type('video/mp4', b'<html>not a video</html>'))
         self.assertTrue(matches_type('video/webm', b'\x1a\x45\xdf\xa3webm'))
+
+    def admin_headers(self):
+        status, headers, body = self.request('/api/login', 'POST', {'username': 'admin', 'password': 'hammonja'})
+        self.assertEqual(status, 200)
+        return {'Cookie': headers['Set-Cookie'].split(';', 1)[0], 'X-CSRF-Token': json.loads(body)['csrf']}
+
+    def test_delete_requires_admin_csrf_and_same_origin(self):
+        self.begin(); self.upload(); self.finish()
+        url = '/api/media/' + self.info['id']
+        self.assertEqual(self.request(url, 'DELETE')[0], 401)
+        headers = self.admin_headers()
+        self.assertEqual(self.request(url, 'DELETE', headers={'Cookie': headers['Cookie']})[0], 403)
+        self.assertEqual(self.request(url, 'DELETE', headers={**headers, 'X-CSRF-Token': 'wrong'})[0], 403)
+        self.assertEqual(self.request(url, 'DELETE', headers={**headers, 'Origin': 'https://elsewhere.example'})[0], 403)
+        for session in self.server.auth.sessions.values():
+            session['expires'] = 0
+        self.assertEqual(self.request(url, 'DELETE', headers=headers)[0], 401)
+        self.assertEqual(len(self.server.media.listing()), 1)
+        self.assertFalse(any(e['type'] == 'media.deleted' for e in self.server.live_store.history()['events']))
+
+    def test_admin_deletion_purges_files_audits_once_and_blocks_reupload(self):
+        self.info['thumbnail'] = base64.b64encode(self.body).decode()
+        self.begin(); self.upload(); self.finish()
+        url = '/api/media/' + self.info['id']
+        self.assertEqual(self.request(url+'/thumbnail')[1]['Cache-Control'], 'no-store')
+        self.assertEqual(self.request(url+'/file')[1]['Cache-Control'], 'no-store')
+        headers = self.admin_headers()
+        before = self.server.live_store.snapshot()
+        self.server.media.total_limit = len(self.body)
+        for _ in range(2):
+            status, _, body = self.request(url, 'DELETE', headers=headers)
+            self.assertEqual(status, 200)
+            self.assertTrue(json.loads(body)['deleted'])
+        after = self.server.live_store.snapshot()
+        self.assertEqual(after['state'], before['state'])
+        self.assertEqual(after['version'], before['version'])
+        self.assertEqual(after['sequence'], before['sequence'] + 1)
+        self.assertEqual(self.server.media.listing(), [])
+        self.assertEqual(self.server.media.manifest()['items'], [])
+        self.assertEqual(list((self.server.media.root / 'originals').iterdir()), [])
+        self.assertEqual(self.request(url+'/file')[0], 410)
+        self.assertEqual(self.request(url+'/thumbnail')[0], 410)
+        events = [e for e in self.server.live_store.history()['events'] if e['type'] == 'media.deleted']
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]['actor'], 'admin')
+        self.assertTrue(events[0]['session'])
+        self.assertEqual(events[0]['details']['id'], self.info['id'])
+        self.assertEqual(events[0]['details']['sha256'], hashlib.sha256(self.body).hexdigest())
+        self.assertEqual(events[0]['changes'], [])
+        self.assertEqual(self.begin()[0], 410)
+        self.assertEqual(self.upload()[0], 410)
+        self.assertEqual(self.finish()[0], 410)
+        self.assertEqual(self.begin({**self.info, 'id': uuid.uuid4().hex})[0], 200, 'Deletion releases file capacity')
+
+    def test_delete_rollback_and_interrupted_cleanup(self):
+        self.begin(); self.upload(); self.finish()
+        headers = self.admin_headers()
+        url = '/api/media/' + self.info['id']
+        with patch.object(self.server.live_store, 'append', side_effect=OSError('audit unavailable')):
+            self.assertEqual(self.request(url, 'DELETE', headers=headers)[0], 503)
+        self.assertEqual(self.request(url+'/file')[2], self.body, 'Failed audit must preserve the original')
+        with patch.object(self.server.media, '_purge_deleted', side_effect=OSError('interrupted cleanup')):
+            self.assertEqual(self.request(url, 'DELETE', headers=headers)[0], 503)
+        self.assertEqual(self.server.media.listing(), [])
+        self.assertEqual(self.request(url+'/file')[0], 410)
+        self.server.media = MediaStore(self.server.live_store, self.server.media.root, reserve_bytes=0)
+        self.assertEqual(list((self.server.media.root / 'originals').iterdir()), [])
+        self.assertEqual(self.request(url, 'DELETE', headers=headers)[0], 200)
+        events = [e for e in self.server.live_store.history()['events'] if e['type'] == 'media.deleted']
+        self.assertEqual(len(events), 1)
 
 
 if __name__ == '__main__':

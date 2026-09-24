@@ -4,6 +4,8 @@ const Media = (() => {
   const cameraIcon = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 5l1.5-2h5L16 5h4a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V7a2 2 0 012-2z"/><circle cx="12" cy="12" r="4"/></svg>';
   let records=[], storageError='', refreshId=0, lastGallery=[], galleryLoaded=false, galleryBusy=false, galleryFetched=0;
   let captureSaving=false, lastSequence=null, lastVersion=null;
+  let galleryAgain=false, galleryEpoch=0;
+  const deleting=new Set();
   const mobilePWA=()=> typeof PWA!=='undefined' && PWA.isRunningStandalone() && (navigator.maxTouchPoints>0 || window.matchMedia?.('(pointer: coarse)').matches);
   const connection=()=>navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   const canSend=()=>mobilePWA() && navigator.onLine!==false && !document.hidden && connection()?.type!=='cellular';
@@ -134,6 +136,8 @@ const Media = (() => {
   }
   function paintGallery(error) {
     const root=document.getElementById('media-gallery');if(!root)return;
+    const viewer=document.getElementById('media-dialog');
+    if(galleryLoaded && viewer?.dataset.mediaId && !lastGallery.some(item=>item.id===viewer.dataset.mediaId))viewer.close();
     const fingerprint=JSON.stringify(lastGallery);
     if(root.dataset.fingerprint===fingerprint && !error)return;
     if(!galleryLoaded){root.innerHTML=`<p class="notice">${error ? 'Gallery could not load. Reconnect and tap Refresh gallery.' : 'Loading the gallery…'}</p>`;return;}
@@ -148,26 +152,56 @@ const Media = (() => {
     root.dataset.fingerprint=fingerprint;
   }
   async function refreshGallery(force=false) {
-    if(typeof page==='undefined' || page!=='gallery' || galleryBusy || (!force && Date.now()-galleryFetched<15000))return;
+    if(typeof page==='undefined' || page!=='gallery')return;
+    if(galleryBusy){galleryAgain=galleryAgain || force;return;}
+    if(!force && Date.now()-galleryFetched<15000)return;
     galleryBusy=true;
+    const epoch=galleryEpoch;
     try {
       const response=await fetch('/api/media',{cache:'no-store'});if(!response.ok)throw Error();
       const result=await response.json();if(!Array.isArray(result.items))throw Error();
+      if(epoch!==galleryEpoch)return;
       lastGallery=result.items.filter(item=>/^[a-f0-9]{32}$/.test(item.id) && Number.isInteger(item.round) && item.round>=0 && item.round<4 && Number.isInteger(item.hole) && item.hole>=1 && item.hole<=18);
       galleryLoaded=true;galleryFetched=Date.now();paintGallery();
-    } catch {paintGallery(true);} finally {galleryBusy=false;}
+    } catch {paintGallery(true);} finally {
+      galleryBusy=false;
+      if(galleryAgain){galleryAgain=false;refreshGallery(true);}
+    }
+  }
+  function access() {
+    document.querySelectorAll('[data-media-delete]').forEach(button=> {
+      button.hidden=!Live.isAdmin();
+      button.disabled=!Live.canEdit() || deleting.has(button.dataset.mediaDelete);
+    });
+  }
+  async function deleteCapture(id) {
+    const item=lastGallery.find(item=>item.id===id);
+    if(!item || !Live.canEdit() || deleting.has(id))return;
+    const kind=item.kind==='video' ? 'video' : 'photo';
+    if(!confirm(`Delete this ${kind} from ${COURSES[item.round]}, hole ${item.hole}? This permanently removes the original from the server and the gallery for everyone. The deletion stays in the history.`))return;
+    deleting.add(id);access();
+    try {
+      const result=await Live.request(`/api/media/${id}`,{method:'DELETE'});
+      if(result.id!==id || result.deleted!==true)throw Error('Deletion was not confirmed. Please refresh the gallery.');
+      galleryEpoch++;
+      lastGallery=lastGallery.filter(capture=>capture.id!==id);
+      paintGallery();refreshGallery(true);
+      toast(`${kind==='video' ? 'Video' : 'Photo'} deleted.`);
+    } catch(error) {toast(error.message || 'Could not delete this capture. Please try again.');}
+    finally {deleting.delete(id);access();}
   }
   function view(id) {
     const item=lastGallery.find(item=>item.id===id);if(!item)return;
     const file=`/api/media/${id}/file`,title=`${COURSES[item.round]} · Hole ${item.hole}`;
     const display=item.kind==='video' ? `<video controls playsinline preload="metadata" src="${file}"></video>` : `<img class="media-original" src="${file}" alt="${title}">`;
     const date=new Date(item.capturedAt), dateText=Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
-    const dialog=modal(title,`${display}<p class="media-view-error" hidden>This format may need downloading to view on your device.</p><p class="fine-print">Captured ${escapeHTML(dateText)} · ${sizeLabel(item.size)}</p><a class="button outline" href="${file}?download=1" download>Download original ↗</a>`,`[data-media-view="${id}"]`);
-    if(dialog){dialog.querySelector('video,img').onerror=()=> {dialog.querySelector('.media-view-error').hidden=false;};dialog.addEventListener('close',()=>dialog.querySelector('video')?.pause());}
+    const dialog=modal(title,`${display}<p class="media-view-error" hidden>This format may need downloading to view on your device.</p><p class="fine-print">Captured ${escapeHTML(dateText)} · ${sizeLabel(item.size)}</p><div class="media-view-actions"><a class="button outline" href="${file}?download=1" download>Download original ↗</a><button type="button" class="button outline media-delete" data-media-delete="${id}" hidden>Delete ${item.kind==='video' ? 'video' : 'photo'}</button></div>`,`[data-media-view="${id}"]`);
+    if(dialog){dialog.dataset.mediaId=id;access();dialog.querySelector('video,img').onerror=()=> {dialog.querySelector('.media-view-error').hidden=false;};dialog.addEventListener('close',()=>dialog.querySelector('video')?.pause());}
   }
   function observe(snapshot) {
+    const changed=snapshot.sequence!==lastSequence;
     lastSequence=snapshot.sequence;lastVersion=snapshot.version;
-    refreshGallery();
+    refreshGallery(changed);
   }
   function start() {
     refreshQueue();
@@ -179,6 +213,7 @@ const Media = (() => {
       if(button.dataset.saveCapture)saveCopy(button.dataset.saveCapture).catch(()=>toast('The local copy could not be opened.'));
       if(button.hasAttribute('data-gallery-refresh'))refreshGallery(true);
       if(button.dataset.mediaView)view(button.dataset.mediaView);
+      if(button.dataset.mediaDelete)deleteCapture(button.dataset.mediaDelete);
     });
     // Going into the background ends this manual upload session, particularly on iOS.
     document.addEventListener('visibilitychange',()=> {if(document.hidden)uploader.stop();else {refreshQueue();refreshGallery();}});
@@ -189,5 +224,5 @@ const Media = (() => {
     window.addEventListener('beforeunload',event=> {if(captureSaving){event.preventDefault();event.returnValue='';}});
     setInterval(()=> {if(!document.hidden)refreshGallery();},15000);
   }
-  return {start,decorate,gallery,refreshGallery,observe,mobilePWA};
+  return {start,decorate,gallery,refreshGallery,observe,mobilePWA,access};
 })();

@@ -25,6 +25,7 @@ const Live = (() => {
     if (mode) mode.textContent = admin ? (canEdit() ? 'Admin · editing enabled' : 'Admin · waiting for connection') : 'Viewing live scores · log in to edit';
     app.classList.toggle('view-only', !canEdit());
     syncRoundReportDialog();
+    if (typeof Media !== 'undefined') Media.access();
   }
   async function request(url, options = {}) {
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
@@ -197,5 +198,5 @@ const Live = (() => {
       }
     }
   }
-  return {start, save, access, canEdit, request, action, download};
+  return {start, save, access, canEdit, isAdmin:()=>admin, request, action, download};
 })();

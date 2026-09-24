@@ -105,11 +105,21 @@ async function browserTests() {
   w.EventSource=class {constructor(){this.listeners={};streams.push(this);}addEventListener(type,fn){this.listeners[type]=fn;}};
   let snapshot={version:4,sequence:12,courses:JSON.parse(fs.readFileSync('course_defaults.json','utf8')),summaries:[null,null,null,null],
     state:{handicaps:[0,0,0,0],rounds:Array.from({length:4},()=>({scores:Array.from({length:4},()=>Array(18).fill(null)),teamScores:Array.from({length:2},()=>Array(18).fill(null)),pars:Array(18).fill(4),indexes:Array.from({length:18},(_,i)=>i+1),verified:false,ctp:null}))}};
-  const uploadMock=serverMock();let published=[];
+  const uploadMock=serverMock();let published=[], signedIn=false, deleteFailure=0, deleteCalls=0, staleGallery=null;
   w.fetch=async(url,options={})=> {
     requests.push({url,method:options.method});
     if(url.startsWith('/api/media/uploads'))return uploadMock.fetch(url,options);
-    const body=url==='/api/session'?{admin:false,csrf:null}:url==='/api/media'?{items:published}:snapshot;
+    if(options.method==='DELETE') {
+      deleteCalls++;assert.equal(options.headers['X-CSRF-Token'],'test-csrf');
+      assert.equal(options.credentials,'same-origin');
+      if(deleteFailure)return {ok:false,status:deleteFailure,json:async()=>({error:'Delete failed'})};
+      const id=url.split('/').pop();published=published.filter(item=>item.id!==id);
+      return {ok:true,status:200,json:async()=>({id,deleted:true})};
+    }
+    if(url==='/api/media' && staleGallery){const held=staleGallery;staleGallery=null;return held;}
+    if(url==='/api/login')signedIn=true;
+    if(url==='/api/logout')signedIn=false;
+    const body=['/api/session','/api/login','/api/logout'].includes(url)?{admin:signedIn,csrf:signedIn?'test-csrf':null}:url==='/api/media'?{items:published}:snapshot;
     return {ok:true,status:200,json:async()=>structured(body)};
   };
   function structured(value){return JSON.parse(JSON.stringify(value));}
@@ -147,7 +157,45 @@ async function browserTests() {
   assert(w.document.querySelector('#media-gallery').textContent.includes('Faldo'));
   assert(!w.document.querySelector('#media-gallery').textContent.includes('James'),'Gallery is not grouped by player');
   assert.equal(w.document.querySelectorAll('#media-gallery video').length,0,'Video originals do not preload in the gallery');
+  const openPhoto=()=>w.document.querySelector('[data-media-view]').click();
+  openPhoto();
+  assert(w.document.querySelector('[data-media-delete]').hidden,'Viewers have no delete control');
+  w.document.querySelector('[data-media-delete]').dispatchEvent(new w.Event('click',{bubbles:true}));
+  assert.equal(deleteCalls,0,'A synthetic click cannot bypass client permissions');
+  w.document.querySelector('[data-media-close]').click();
+  async function login() {
+    w.document.querySelector('[data-action="login"]').click();
+    w.document.querySelector('#login-name').value='admin';w.document.querySelector('#login-password').value='test';
+    w.document.querySelector('#login-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+    await tick();await tick();
+  }
+  await login();openPhoto();
+  assert(!w.document.querySelector('[data-media-delete]').hidden,'Admin sees Delete photo');
+  w.confirm=()=>false;w.document.querySelector('[data-media-delete]').click();
+  assert.equal(deleteCalls,0,'Cancelling confirmation preserves the capture');
+  w.confirm=()=>true;deleteFailure=503;w.document.querySelector('[data-media-delete]').click();await tick();await tick();
+  assert(w.document.querySelector('[data-media-delete]'),'Failed deletion keeps the viewer open for retry');
+  assert(!w.document.querySelector('[data-media-delete]').disabled);
+  deleteFailure=401;w.document.querySelector('[data-media-delete]').click();await tick();await tick();
+  assert(w.document.querySelector('[data-media-delete]').hidden,'Expired login hides an already-open delete control');
+  w.document.querySelector('[data-media-close]').click();deleteFailure=0;await login();openPhoto();
+  // A GET begun before deletion must not put the deleted image back into the gallery.
+  let releaseStale;
+  const previousItems=structured(published);
+  staleGallery=new Promise(resolve=>{releaseStale=()=>resolve({ok:true,json:async()=>({items:previousItems})});});
+  vm.runInContext('Media.refreshGallery(true)',ctx);await tick();
+  w.document.querySelector('[data-media-delete]').click();await tick();await tick();
+  assert(!w.document.getElementById('media-dialog'),'Successful deletion closes the viewer');
+  releaseStale();await tick();await tick();await tick();
+  assert(!w.document.querySelector('[data-media-view]'),'A stale gallery fetch cannot restore a deleted item');
+  // Other admins' deletions arrive through the same live snapshot notification.
+  published=previousItems;snapshot.sequence++;streams[0].listeners.snapshot({data:JSON.stringify(snapshot)});
+  await tick();await tick();openPhoto();
+  published=[];snapshot.sequence++;streams[0].listeners.snapshot({data:JSON.stringify(snapshot)});
+  await tick();await tick();
+  assert(!w.document.getElementById('media-dialog'),'Remote deletion closes an open viewer');
+  assert(!w.document.querySelector('[data-media-view]'),'Remote deletion updates gallery without waiting for its polling timer');
   assert.deepEqual(errors,[]);w.close();
-  console.log('Media UI: PWA-only camera, viewer capture, frozen hole metadata, local save, explicit upload and course/hole gallery passed.');
+  console.log('Media UI: capture, queue, gallery, admin-only deletion, cancellation, failures, expired sessions and live removal passed.');
 }
 queueTests().then(browserTests).catch(error=>{console.error(error);process.exitCode=1;process.exit(1);});

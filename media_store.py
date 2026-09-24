@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -99,13 +100,22 @@ class MediaStore:
                 created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'uploading',
                 offset INTEGER NOT NULL DEFAULT 0, digest TEXT, uploaded_at TEXT,
                 history_sequence INTEGER, thumbnail BLOB)""")
+            interrupted = [r[0] for r in db.execute("SELECT id FROM golf_media WHERE status='deleting'")]
+        for capture_id in interrupted:
+            try:
+                self._purge_deleted(capture_id)
+            except (OSError, sqlite3.Error):
+                # Keep inaccessible files reserved until cleanup can be retried.
+                pass
 
-    def _row(self, db, capture_id, key=None):
+    def _row(self, db, capture_id, key=None, include_deleted=False):
         row = db.execute("SELECT id,key_hash,metadata,created_at,status,offset,digest,uploaded_at,history_sequence,thumbnail FROM golf_media WHERE id=?", (capture_id,)).fetchone()
         if not row:
             raise MediaError("Capture not found.", 404)
         if key is not None and not hmac.compare_digest(row[1], key_hash(key)):
             raise MediaError("This capture belongs to another upload.", 403)
+        if not include_deleted and row[4] in ("deleting", "deleted"):
+            raise MediaError("This capture has been deleted by an admin.", 410)
         return row
 
     def _path(self, row, final=False):
@@ -141,7 +151,7 @@ class MediaStore:
                 if json.loads(row[2]) != info:
                     raise MediaError("Capture details changed. Keep the original upload details.", 409)
                 return self._progress(row)
-            count, reserved = db.execute("SELECT COUNT(*),COALESCE(SUM(json_extract(metadata,'$.size')),0) FROM golf_media").fetchone()
+            count, reserved = db.execute("SELECT COUNT(*),COALESCE(SUM(json_extract(metadata,'$.size')),0) FROM golf_media WHERE status!='deleted'").fetchone()
             pending = db.execute("SELECT COALESCE(SUM(json_extract(metadata,'$.size')-offset),0) FROM golf_media WHERE status='uploading'").fetchone()[0]
             if count >= 10000 or reserved + info["size"] > self.total_limit or shutil.disk_usage(self.root).free < pending + info["size"] + self.reserve_bytes:
                 raise MediaError("The server needs more storage. Your capture will stay on this phone.", 507)
@@ -214,6 +224,31 @@ class MediaStore:
             event["details"]["historySequenceAtUpload"] = event["seq"]
             db.execute("UPDATE golf_events SET content=? WHERE seq=?", (encoded(event), event["seq"]))
             return self._progress(self._row(db, capture_id))
+
+    def delete(self, capture_id, session):
+        with self.live.courses.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = self._row(db, capture_id, include_deleted=True)
+            if row[4] == "uploading":
+                raise MediaError("This capture has not finished uploading.", 409)
+            if row[4] == "ready":
+                self.live.append(db, "media.deleted", "admin", session, [],
+                                 {**self._public(row), "deletedAt": now()})
+                db.execute("UPDATE golf_media SET status='deleting',thumbnail=NULL WHERE id=?", (capture_id,))
+        # Commit the audit record and hide the capture before removing its files.
+        # The tombstone prevents delayed upload retries from recreating it.
+        self._purge_deleted(capture_id)
+        return {"id": capture_id, "deleted": True}
+
+    def _purge_deleted(self, capture_id):
+        with self.live.courses.connect() as db:
+            row = self._row(db, capture_id, include_deleted=True)
+        if row[4] != "deleting":
+            return
+        for path in (self._path(row, True), self._path(row)):
+            path.unlink(missing_ok=True)
+        with self.live.courses.connect() as db:
+            db.execute("UPDATE golf_media SET status='deleted' WHERE id=? AND status='deleting'", (capture_id,))
 
     def listing(self):
         with self.live.courses.connect() as db:
