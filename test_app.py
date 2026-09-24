@@ -72,7 +72,7 @@ class WebsiteTests(unittest.TestCase):
         original = (ROOT / "index.html").read_bytes()
         html = versioned_index(original).decode()
         urls = re.findall(r'(?:src|href)="([^\"]+\.(?:js|css)\?[^\"]+)"', html)
-        self.assertEqual(len(urls), 7)
+        self.assertEqual(len(urls), 9)
         for url in urls:
             self.assertRegex(url, r'\?v=[a-f0-9]{16}$')
             self.assertEqual(self.request(url)[0], 200)

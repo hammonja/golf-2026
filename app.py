@@ -14,6 +14,7 @@ from course_store import CourseStore, ConflictError, MAX_UPLOAD
 from live_store import LiveStore
 from auth import Auth
 from round_reports import RoundReports
+from media_store import MediaStore, MediaError, CHUNK_SIZE, ID as MEDIA_ID
 
 
 ROOT = Path(__file__).resolve().parent
@@ -25,6 +26,8 @@ ROUTES = {
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/live.js": ("live.js", "text/javascript; charset=utf-8"),
     "/pwa.js": ("pwa.js", "text/javascript; charset=utf-8"),
+    "/media.js": ("media.js", "text/javascript; charset=utf-8"),
+    "/media_queue.js": ("media_queue.js", "text/javascript; charset=utf-8"),
     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "/assets/apple-touch-icon.png": ("assets/apple-touch-icon.png", "image/png"),
     "/assets/app-icon-192.png": ("assets/app-icon-192.png", "image/png"),
@@ -56,7 +59,7 @@ def versioned_index(body):
         filename = ROUTES[url][0]
         digest = hashlib.sha256((ROOT / filename).read_bytes()).hexdigest()[:16]
         return f'{attribute}="{url}?v={digest}"'
-    html = re.sub(r'(src|href)="(/(?:app|live|pwa|courses|mobile|scoring)\.js|/style\.css)"', version, html)
+    html = re.sub(r'(src|href)="(/(?:app|live|pwa|courses|mobile|scoring|media|media_queue)\.js|/style\.css)"', version, html)
     return html.encode("utf-8")
 
 
@@ -140,6 +143,9 @@ class GolfHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlsplit(self.path).path
+        if path == "/api/media/uploads" or re.fullmatch(rf"/api/media/uploads/({MEDIA_ID})/complete", path):
+            self._media_write(path)
+            return
         summary_retry = re.fullmatch(r"/api/summaries/([0-3])/retry", path)
         if path not in ("/api/login", "/api/logout") and not summary_retry:
             self._json(404, {"error": "Not found."})
@@ -180,6 +186,9 @@ class GolfHandler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         path = urlsplit(self.path).path
+        if re.fullmatch(rf"/api/media/uploads/({MEDIA_ID})", path):
+            self._media_write(path)
+            return
         match = re.fullmatch(r"/api/courses/([0-3])(?:/assets/(map|scorecard))?", path)
         if not match and path != "/api/state":
             self._json(404, {"error": "Not found."})
@@ -216,6 +225,77 @@ class GolfHandler(BaseHTTPRequestHandler):
         except (OSError, sqlite3.Error):
             self._json(500, {"error": "Could not save. Check server storage permissions."})
 
+    def _media_write(self, path):
+        if not self._same_origin():
+            return
+        try:
+            key = self.headers.get("X-Media-Key", "")
+            if path == "/api/media/uploads":
+                if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                    raise MediaError("Send capture details as JSON.")
+                result = self.server.media.begin(json.loads(self._body(160 * 1024)), key)
+            elif path.endswith("/complete"):
+                result = self.server.media.finish(path.split("/")[-2], key)
+                self._publish()
+            else:
+                if self.headers.get("Content-Type", "").split(";")[0] != "application/octet-stream":
+                    raise MediaError("Send a binary upload chunk.")
+                offset = int(self.headers.get("X-Upload-Offset", "-1"))
+                result = self.server.media.chunk(path.rsplit("/", 1)[-1], key, offset, self._body(CHUNK_SIZE))
+            self._json(200, result)
+        except MediaError as error:
+            self._json(error.status, {"error": str(error)})
+        except (ValueError, UnicodeError) as error:
+            self._json(400, {"error": str(error)})
+        except (OSError, sqlite3.Error):
+            self._json(503, {"error": "Upload could not be saved. Your phone will keep its copy; try again later."})
+
+    def _media_file(self, file, mime, include_body):
+        size = file.stat().st_size
+        start, end, status = 0, size - 1, 200
+        if self.headers.get("Range"):
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers["Range"])
+            try:
+                if not match or not any(match.groups()):
+                    raise ValueError()
+                left, right = match.groups()
+                if left:
+                    start = int(left)
+                    end = min(int(right), size - 1) if right else size - 1
+                else:
+                    suffix = int(right)
+                    if suffix <= 0:
+                        raise ValueError()
+                    start = max(0, size - suffix)
+                if not 0 <= start <= end < size:
+                    raise ValueError()
+                status = 206
+            except ValueError:
+                self._respond(416, b"", mime, False, {"Content-Range": f"bytes */{size}"})
+                return
+        self.send_response(status)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "same-origin")
+        disposition = "attachment" if urlsplit(self.path).query == "download=1" else "inline"
+        self.send_header("Content-Disposition", f'{disposition}; filename="{file.name}"')
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        if include_body:
+            with file.open("rb") as source:
+                source.seek(start)
+                remaining = end - start + 1
+                while remaining:
+                    block = source.read(min(65536, remaining))
+                    if not block:
+                        break
+                    self.wfile.write(block)
+                    remaining -= len(block)
+
     def _events(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -245,6 +325,30 @@ class GolfHandler(BaseHTTPRequestHandler):
 
     def _serve(self, include_body):
         path = unquote(urlsplit(self.path).path)
+        if path.startswith("/api/media/") or path == "/api/media":
+            try:
+                if path == "/api/media":
+                    self._json(200, {"items": self.server.media.listing()}, include_body)
+                elif path == "/api/media/manifest.json":
+                    self._json(200, self.server.media.manifest(), include_body,
+                               {"Content-Disposition": 'attachment; filename="portugal-2026-media.json"'})
+                elif match := re.fullmatch(rf"/api/media/uploads/({MEDIA_ID})", path):
+                    self._json(200, self.server.media.progress(match[1], self.headers.get("X-Media-Key", "")), include_body)
+                elif match := re.fullmatch(rf"/api/media/({MEDIA_ID})/(file|thumbnail)", path):
+                    asset, mime = self.server.media.asset(match[1], match[2] == "thumbnail")
+                    if isinstance(asset, bytes):
+                        self._respond(200, asset, mime, include_body, {"Cache-Control": "public, max-age=31536000, immutable"})
+                    else:
+                        self._media_file(asset, mime, include_body)
+                else:
+                    self._json(404, {"error": "Not found."}, include_body)
+            except MediaError as error:
+                self._json(error.status, {"error": str(error)}, include_body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except (OSError, sqlite3.Error):
+                self._json(503, {"error": "Media storage is temporarily unavailable."}, include_body)
+            return
         if path == "/api/session":
             session = self.server.auth.session(self.headers)
             self._json(200, {"admin": bool(session), "csrf": session["csrf"] if session else None}, include_body)
@@ -289,9 +393,10 @@ class GolfHandler(BaseHTTPRequestHandler):
         self._respond(200, body, content_type, include_body)
 
 
-def configure_server(server, database, reporter=None):
+def configure_server(server, database, reporter=None, media_root=None):
     server.course_store = CourseStore(database)
     server.live_store = LiveStore(server.course_store)
+    server.media = MediaStore(server.live_store, media_root or os.environ.get("GOLF_MEDIA_DIR") or Path(database).resolve().parent / "media")
     server.auth = Auth()
     server.updates = threading.Condition()
     def notify():

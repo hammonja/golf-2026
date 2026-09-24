@@ -53,6 +53,7 @@ function refreshMobileEditor(focusSelector) {
   const editor=app.querySelector('.mobile-hole-editor');
   if(editor) editor.outerHTML=mobileHoleEditor();
   Live.access();
+  if (typeof Media !== 'undefined') Media.decorate();
   if(focusSelector) app.querySelector(focusSelector)?.focus({preventScroll:true});
 }
 function commitMobileScore(p,value) {

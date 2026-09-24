@@ -3,7 +3,8 @@ const PWA = (() => {
   const standalone = window.matchMedia?.('(display-mode: standalone)');
   const fullscreen = window.matchMedia?.('(display-mode: fullscreen)');
   let installPrompt = null, installed = false, prompting = false;
-  const isInstalled = () => installed || navigator.standalone === true || standalone?.matches || fullscreen?.matches;
+  const isRunningStandalone = () => navigator.standalone === true || standalone?.matches || fullscreen?.matches;
+  const isInstalled = () => installed || isRunningStandalone();
 
   function decorate() {
     document.documentElement.classList.toggle('installed-app', Boolean(isInstalled()));
@@ -80,5 +81,5 @@ const PWA = (() => {
   document.addEventListener('click', event => {
     if (event.target.closest('[data-install-app]')) promptInstall();
   });
-  return { decorate };
+  return { decorate, isRunningStandalone };
 })();

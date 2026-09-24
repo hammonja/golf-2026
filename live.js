@@ -55,7 +55,10 @@ const Live = (() => {
     version = snapshot.version; sequence = snapshot.sequence;
     data = clone(snapshot.state); lastSubmitted = clone(data); courseLibrary = snapshot.courses; ready = true;
     roundSummaries = clone(snapshot.summaries || [null, null, null, null]); summaryBasis = clone(snapshot.state);
-    updateRankMovement(); render();
+    if (typeof Media !== 'undefined') Media.observe(snapshot);
+    updateRankMovement();
+    if (page === 'gallery' && document.getElementById('media-gallery')) access();
+    else render();
   }
   async function refresh() {
     const [session, snapshot] = await Promise.all([request('/api/session'), request('/api/state')]);
@@ -95,6 +98,7 @@ const Live = (() => {
           data = clone(snapshot.state); lastSubmitted = clone(data); courseLibrary = snapshot.courses;
           roundSummaries = clone(snapshot.summaries || [null, null, null, null]); summaryBasis = clone(snapshot.state);
           decorateRoundReports();
+          if (typeof Media !== 'undefined') Media.observe(snapshot);
           updateRankMovement();
         }
       } catch (error) {

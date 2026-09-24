@@ -5,9 +5,10 @@
   "scripts": {
     "start": "python app.py",
     "dev": "python app.py",
-    "test": "node tests.js && node test-controls.js && node test-live-client.js && node test-replay.js && node test-pwa.js"
+    "test": "node tests.js && node test-controls.js && node test-live-client.js && node test-replay.js && node test-pwa.js && node test-media.js"
   },
   "devDependencies": {
+    "fake-indexeddb": "^4.0.2",
     "jsdom": "^22.1.0"
   }
 }
