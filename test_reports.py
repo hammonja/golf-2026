@@ -18,7 +18,7 @@ from round_reports import OpenAIReporter, RoundReports, settings, validate_repor
 
 def sample_report():
     sentence = "James and Owen shared the lead while Ben and Mark stayed close through the opening holes."
-    return {"title": "A shared finish", "paragraphs": [" ".join([sentence] * 7)] * 3}
+    return {"title": "A shared finish", "paragraphs": [" ".join([sentence] * 3)] * 3}
 
 
 class FakeReporter:
@@ -217,14 +217,14 @@ class ProviderAndFactsTests(unittest.TestCase):
         with patch("round_reports.urlopen") as send:
             send.return_value.__enter__.return_value.read.return_value = json.dumps(response).encode()
             report = reporter.generate({"history": {"events": []}})
-            self.assertTrue(300 <= word_count(report["paragraphs"]) <= 500)
+            self.assertTrue(140 <= word_count(report["paragraphs"]) <= 160)
             request = send.call_args.args[0]
             self.assertEqual(request.full_url, "https://api.openai.com/v1/responses")
             payload = json.loads(request.data)
             self.assertFalse(payload["store"])
             self.assertTrue(payload["text"]["format"]["strict"])
             self.assertNotIn("test-key", json.dumps(payload))
-        for paragraphs in [["word"] * 3, ["word " * 200] * 3]:
+        for paragraphs in [["word"] * 3, ["word " * 69, "word " * 70], ["word " * 80, "word " * 81], ["word " * 100] * 3]:
             with self.assertRaises(ValueError):
                 validate_report({"title": "Report", "paragraphs": paragraphs})
         invented = sample_report()

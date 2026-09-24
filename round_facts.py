@@ -35,7 +35,7 @@ def inputs(state, ri):
 
 
 def signature(state, ri):
-    value = {"promptVersion": 4, "roundIndex": ri, **inputs(state, ri)}
+    value = {"promptVersion": 5, "roundIndex": ri, **inputs(state, ri)}
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
