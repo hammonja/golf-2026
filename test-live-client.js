@@ -129,6 +129,20 @@ async function main() {
   click(editor,'[data-action="login"]');await tick();await tick();
   assert(editor.document.querySelector('#course-tee').disabled);
   assert(editor.document.querySelector('[data-action="history"]').hidden);
+  // Reports arrive through the existing live snapshots, only for completed rounds.
+  click(viewer,'[data-page="dashboard"]');await tick();
+  const report={status:'ready',report:{title:'<script>unsafe</script>',paragraphs:['James led at the turn.','Ben drew level.','The finish was tied.']}};
+  snapshot.summaries=[null,null,report,null];snapshot.sequence++;push();await tick();
+  assert(!viewer.document.querySelector('.round-report'),'An incomplete round never shows a report');
+  snapshot.state.rounds[2].scores.forEach(row=>row.fill(4));snapshot.sequence++;push();await tick();
+  assert(viewer.document.querySelector('#round-report-2'));
+  assert.equal(viewer.document.querySelector('#round-report-2 h3').textContent,'<script>unsafe</script>');
+  assert(!viewer.document.querySelector('#round-report-2 script'),'AI text is escaped');
+  assert(viewer.document.querySelector('a[href="#round-report-2"]'));
+  snapshot.summaries[2]={status:'pending'};snapshot.sequence++;push();await tick();
+  assert(!viewer.document.querySelector('#round-report-2').textContent.includes('James led'));
+  snapshot.summaries[2]=report;snapshot.state.rounds[2].scores[0][17]=null;snapshot.sequence++;push();await tick();
+  assert(!viewer.document.querySelector('.round-report'),'Clearing a score removes the report');
   assert.deepEqual(errors,[]);
   editor.dom.window.close();viewer.dom.window.close();
   console.log('Live browser checks passed: read-only controls, login/logout, legacy preservation, queued saves, dropped responses, conflicts, two viewers, tee/mobile/pin updates.');

@@ -83,6 +83,7 @@ def changes(before, after, path=None):
 class LiveStore:
     def __init__(self, courses):
         self.courses = courses
+        self.summaries = None
         with courses.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("CREATE TABLE IF NOT EXISTS golf_state (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL, content TEXT NOT NULL)")
@@ -125,8 +126,10 @@ class LiveStore:
                 connection.execute("BEGIN")
                 return self.snapshot(connection)
         version, content = db.execute("SELECT version,content FROM golf_state WHERE id=1").fetchone()
-        return {"version": version, "state": json.loads(content),
+        state = json.loads(content)
+        return {"version": version, "state": state,
                 "courses": [json.loads(r[0]) for r in db.execute("SELECT content FROM courses ORDER BY id")],
+                "summaries": self.summaries.visible(db, state) if self.summaries else [None] * 4,
                 "sequence": db.execute("SELECT MAX(seq) FROM golf_events").fetchone()[0]}
 
     def save(self, payload, session):
@@ -158,6 +161,8 @@ class LiveStore:
                 version = current["version"] + 1
                 db.execute("UPDATE golf_state SET version=?,content=? WHERE id=1", (version, encoded(state)))
                 self.append(db, kind, "admin", session, edits, {"version": version, "requestId": request_id})
+                if self.summaries:
+                    self.summaries.sync(db, state)
             saved_version = db.execute("SELECT version FROM golf_state WHERE id=1").fetchone()[0]
             db.execute("INSERT INTO golf_requests VALUES (?,?,?)", (request_id, fingerprint, saved_version))
             return self.snapshot(db)

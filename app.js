@@ -20,6 +20,7 @@ function valid(s) {
   return s && array(s.handicaps, 4, h => typeof h === 'number' && Number.isFinite(h) && h >= -10 && h <= 54) && array(s.rounds, 4, r => r && array(r.scores, 4, a => array(a, 18, score)) && array(r.teamScores, 2, a => array(a, 18, score)) && array(r.pars, 18, p => Number.isInteger(p) && p >= 3 && p <= 6) && array(r.indexes, 18, p => Number.isInteger(p) && p >= 1 && p <= 18) && new Set(r.indexes).size === 18 && teeSnapshotValid(r.tee) && typeof r.verified === 'boolean' && (r.ctp === null || Number.isInteger(r.ctp) && r.ctp >= 0 && r.ctp < 4));
 }
 let data = empty();
+let roundSummaries = [null, null, null, null], summaryBasis = null;
 let page = 'dashboard', selected = 0, setup = false;
 let previousRanks = null, rankMovement = [0, 0, 0, 0];
 const app = document.getElementById('app');
@@ -60,10 +61,37 @@ function earningsNote() {
   return `<p class="fine-print earnings-note">Earnings are prize money before the £50 entry. Provisional winnings follow the live leaders; confirmed winnings require complete scores and verified course details. Overall prizes also await all four nearest-the-pin awards.${result.tiedPrizes ? ` £${result.tiedPrizes} in tied prizes remains unallocated until ties are resolved.` : ''}</p>`;
 }
 function scene() { return `<img class="landscape hero-photo" src="/assets/hero-course.png" alt="Golf course at sunset" fetchpriority="high" decoding="async">`; }
+function reportInputs(state, ri) {
+  const r = state.rounds[ri];
+  return {scores: ri === 3 ? r.teamScores : r.scores, pars:r.pars, indexes:ri === 3 ? null : r.indexes,
+    handicaps:ri === 3 ? null : state.handicaps, verified:r.verified, ctp:r.ctp, tee:r.tee || null};
+}
+function decorateRoundReports() {
+  if (!app.querySelector) return;
+  app.querySelector('.round-reports')?.remove();
+  app.querySelectorAll('.report-jump').forEach(link => link.remove());
+  const grid = page === 'dashboard' ? app.querySelector('.competition-grid') : null;
+  if (!grid || !summaryBasis) return;
+  const reports = roundSummaries.map((summary, ri) => {
+    const r = data.rounds[ri], rows = ri === 3 ? r.teamScores : r.scores;
+    if (!summary || !rows.every(row => row.every(Golf.played)) || JSON.stringify(reportInputs(data,ri)) !== JSON.stringify(reportInputs(summaryBasis,ri))) return '';
+    const ready = summary.status === 'ready' && summary.report;
+    const content = ready ? `<h3>${escapeHTML(summary.report.title)}</h3>${summary.report.paragraphs.map(p=>`<p>${escapeHTML(p)}</p>`).join('')}`
+      : `<h3>${summary.status === 'pending' ? 'Writing the round report…' : 'Round report unavailable'}</h3><p>${summary.status === 'pending' ? 'The scores are in. Your AI round report will appear here automatically.' : 'The completed scorecard is available. The round report could not be generated yet.'}</p>${summary.status === 'failed' ? `<button class="button outline" data-action="summary-retry-${ri}" data-admin-only hidden>Retry round report</button>` : ''}`;
+    if (ready) {
+      const link = document.createElement('a'); link.className = 'text-button report-jump';
+      link.href = `#round-report-${ri}`; link.textContent = 'Read round report ↓';
+      grid.children[ri]?.append(link);
+    }
+    return `<article id="round-report-${ri}" class="card round-report"><div class="eyebrow green">ROUND 0${ri+1} · ${COURSES[ri]} · AI ROUND REPORT</div>${content}</article>`;
+  }).join('');
+  if (reports) grid.insertAdjacentHTML('afterend', `<div class="round-reports">${reports}</div>`);
+}
 function shell(content) {
   app.innerHTML = `<header class="header"><a href="#dashboard" class="brand"><span class="brand-mark">p<span>26</span><i></i></span><span>PORTUGAL<span class="brand-sub">THE GOLF GETAWAY</span></span></a><nav aria-label="Main navigation">${[['dashboard','Leaderboard'],['scorecard','Scorecards'],['players','Players & handicaps'],['rules','The rulebook']].map(([key,label]) => `<button data-page="${key}" class="nav-link ${page === key ? 'active' : ''}">${label}</button>`).join('')}</nav><button class="login-button" data-action="login">Log in</button><span class="trip-tag"><span class="flag-dot"></span> ALGARVE ’26</span></header><div class="live-bar"><span class="access-mode">Viewing live scores · log in to edit</span><span class="save-status" role="status">Connecting…</span></div><main>${content}</main><footer><span><strong>Four golfers. Four rounds. One winner.</strong><br>Made for the fairways. And the clubhouse.</span><div><span class="save-status">Connecting to live scores…</span><button class="text-button" data-action="export">Export scores ↗</button><button class="text-button" data-action="import">Import backup</button><button class="text-button" data-action="history" data-admin-only hidden>Download history JSON</button><button class="text-button" data-action="migrate" hidden>Import this browser’s old scores</button><button class="text-button" data-action="draft" hidden>Download unsaved draft</button><input type="file" id="import" accept="application/json" hidden></div></footer>`;
   decorateCourses();
   decorateMobile();
+  decorateRoundReports();
   Live.access();
   if (typeof PWA !== 'undefined') PWA.decorate();
 }

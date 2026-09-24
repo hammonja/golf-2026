@@ -13,6 +13,7 @@ from urllib.parse import unquote, urlsplit
 from course_store import CourseStore, ConflictError, MAX_UPLOAD
 from live_store import LiveStore
 from auth import Auth
+from round_reports import RoundReports
 
 
 ROOT = Path(__file__).resolve().parent
@@ -139,13 +140,19 @@ class GolfHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlsplit(self.path).path
-        if path not in ("/api/login", "/api/logout"):
+        summary_retry = re.fullmatch(r"/api/summaries/([0-3])/retry", path)
+        if path not in ("/api/login", "/api/logout") and not summary_retry:
             self._json(404, {"error": "Not found."})
             return
         if not self._same_origin():
             return
         try:
-            if path == "/api/login":
+            if summary_retry:
+                session = self._admin(write=True)
+                if not session:
+                    return
+                self._json(200, self.server.live_store.summaries.retry(int(summary_retry[1]), session["id"]))
+            elif path == "/api/login":
                 if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                     raise ValueError("Send login as JSON.")
                 payload = json.loads(self._body(4096))
@@ -282,11 +289,15 @@ class GolfHandler(BaseHTTPRequestHandler):
         self._respond(200, body, content_type, include_body)
 
 
-def configure_server(server, database):
+def configure_server(server, database, reporter=None):
     server.course_store = CourseStore(database)
     server.live_store = LiveStore(server.course_store)
     server.auth = Auth()
     server.updates = threading.Condition()
+    def notify():
+        with server.updates:
+            server.updates.notify_all()
+    server.live_store.summaries = RoundReports(server.live_store, reporter=reporter, notify=notify)
     return server
 
 
@@ -295,12 +306,17 @@ def main():
     port = int(os.environ.get("PORT", "4050"))
     with ThreadingHTTPServer((host, port), GolfHandler) as server:
         configure_server(server, os.environ.get("COURSE_DB", str(ROOT / "data" / "courses.sqlite3")))
+        server.live_store.summaries.start()
         print(f"Portugal 2026: http://localhost:{port}", flush=True)
         print("Shared scores and history are saved on the server. Viewers are read-only; admin login enables editing.", flush=True)
+        reporter = server.live_store.summaries.reporter
+        print(f"AI round reports: {'configured' if reporter.configured else 'unavailable'}; model={reporter.model}", flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             print("\nServer stopped.", flush=True)
+        finally:
+            server.live_store.summaries.close()
 
 
 if __name__ == "__main__":

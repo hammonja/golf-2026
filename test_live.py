@@ -58,6 +58,8 @@ class SharedGolfTests(unittest.TestCase):
         return {'state':copy.deepcopy(snapshot['state']), 'version':snapshot['version'], 'requestId':uuid.uuid4().hex}
 
     def test_viewers_cannot_mutate_any_api_or_read_history(self):
+        self.assertEqual(self.request('/api/summaries/0/retry', 'POST')[0], 401)
+        self.assertEqual(self.request('/api/summaries/0/retry', 'POST', headers={'Cookie': self.credentials['Cookie']})[0], 403)
         for path, body in [('/api/state', self.payload()), ('/api/courses/0', {'version':1,'tees':[]}), ('/api/courses/0/assets/map', b'%PDF-test')]:
             self.assertEqual(self.request(path, 'PUT', body)[0], 401)
             self.assertEqual(self.request(path, 'PUT', body, {'Cookie':self.credentials['Cookie']})[0], 403)
@@ -82,6 +84,29 @@ class SharedGolfTests(unittest.TestCase):
         for _ in range(10):
             self.assertEqual(self.request('/api/login', 'POST', {'username':'admin','password':'wrong'})[0], 401)
         self.assertEqual(self.request('/api/login', 'POST', {'username':'admin','password':'wrong'})[0], 429)
+
+    def test_report_is_shared_and_admin_retry_is_audited(self):
+        from test_reports import FakeReporter
+        reports = self.server.live_store.summaries
+        reports.reporter = FakeReporter()
+        reports.debounce = 0
+        payload = self.payload()
+        payload['state']['rounds'][2]['scores'] = [[4] * 18 for _ in range(4)]
+        status, _, saved = self.request('/api/state', 'PUT', payload, self.credentials)
+        self.assertEqual(status, 200)
+        self.assertEqual(saved['summaries'][2]['status'], 'pending')
+        reports.run_once()
+        public = self.request('/api/state')[2]
+        self.assertEqual(public['summaries'][2]['status'], 'ready')
+        self.assertGreater(public['sequence'], saved['sequence'])
+        self.assertEqual(public['version'], saved['version'])
+        with self.server.course_store.connect() as db:
+            db.execute("UPDATE golf_reports SET status='failed',content=NULL WHERE round=2")
+        self.assertEqual(self.request('/api/summaries/2/retry', 'POST', headers=self.credentials)[0], 200)
+        event = self.server.live_store.history()['events'][-1]
+        self.assertEqual(event['type'], 'summary.retry_requested')
+        self.assertTrue(event['session'])
+        self.assertEqual(self.request('/api/summaries/0/retry', 'POST', headers=self.credentials)[0], 400)
 
     def test_state_conflicts_idempotency_and_restart(self):
         payload = self.payload()

@@ -53,6 +53,7 @@ const Live = (() => {
     if (!force && snapshot.sequence <= sequence && ready) { access(); return; }
     version = snapshot.version; sequence = snapshot.sequence;
     data = clone(snapshot.state); lastSubmitted = clone(data); courseLibrary = snapshot.courses; ready = true;
+    roundSummaries = clone(snapshot.summaries || [null, null, null, null]); summaryBasis = clone(snapshot.state);
     updateRankMovement(); render();
   }
   async function refresh() {
@@ -66,6 +67,7 @@ const Live = (() => {
   }
   function save(action = 'scores.updated') {
     updateRankMovement();
+    decorateRoundReports();
     if (!canEdit()) { if (lastSubmitted) data = clone(lastSubmitted); access(); return; }
     if (JSON.stringify(data) === JSON.stringify(lastSubmitted) && action === 'scores.updated') return;
     lastSubmitted = clone(data);
@@ -90,6 +92,8 @@ const Live = (() => {
         queue.shift();
         if (!queue.length) {
           data = clone(snapshot.state); lastSubmitted = clone(data); courseLibrary = snapshot.courses;
+          roundSummaries = clone(snapshot.summaries || [null, null, null, null]); summaryBasis = clone(snapshot.state);
+          decorateRoundReports();
           updateRankMovement();
         }
       } catch (error) {
@@ -170,6 +174,12 @@ const Live = (() => {
     if (legacyProblem) toast('An older browser backup could not be read. Live server scores are unaffected.');
   }
   async function action(name) {
+    const retry = /^summary-retry-([0-3])$/.exec(name);
+    if (retry && admin) {
+      try { accept(await request(`/api/summaries/${retry[1]}/retry`, {method:'POST'}), true); }
+      catch (error) { toast(error.message); }
+      return;
+    }
     if (name === 'login') return login();
     if (name === 'history' && admin) {
       try { download(await request('/api/history'), 'portugal-2026-history.json'); } catch (error) { toast(error.message); }
