@@ -66,26 +66,72 @@ function reportInputs(state, ri) {
   return {scores: ri === 3 ? r.teamScores : r.scores, pars:r.pars, indexes:ri === 3 ? null : r.indexes,
     handicaps:ri === 3 ? null : state.handicaps, verified:r.verified, ctp:r.ctp, tee:r.tee || null};
 }
+function currentRoundSummary(ri) {
+  if (!Number.isInteger(ri) || ri < 0 || ri > 3 || !summaryBasis) return null;
+  const r = data.rounds[ri], rows = ri === 3 ? r.teamScores : r.scores;
+  return rows.every(row => row.every(Golf.played)) && JSON.stringify(reportInputs(data,ri)) === JSON.stringify(reportInputs(summaryBasis,ri)) ? roundSummaries[ri] : null;
+}
+function syncRoundReportDialog() {
+  const dialog = document.getElementById('round-report-dialog');
+  if (!dialog) return;
+  const ri = Number(dialog.dataset.round), summary = currentRoundSummary(ri);
+  if (page !== 'dashboard' || !summary) { dialog.close(); return; }
+  const ready = summary.status === 'ready' && summary.report;
+  const content = ready ? `<h2 id="round-report-title">${escapeHTML(summary.report.title)}</h2>${summary.report.paragraphs.map(p=>`<p>${escapeHTML(p)}</p>`).join('')}`
+    : `<h2 id="round-report-title">${summary.status === 'pending' ? 'Writing the round report…' : 'Round report unavailable'}</h2><p>${summary.status === 'pending' ? 'The scores are in. Your updated report will appear here automatically.' : 'The completed scorecard is available. The round report could not be generated yet.'}</p>${summary.status === 'failed' ? `<button class="button outline" data-action="summary-retry-${ri}" hidden>Retry round report</button>` : ''}`;
+  const body = dialog.querySelector('.round-report-content');
+  // Keep the open dialog and reading position across live snapshot renders.
+  if (body.dataset.content !== content) {
+    body.innerHTML = content; body.dataset.content = content;
+    dialog.querySelector('[data-report-close]').focus({preventScroll:true});
+  }
+  const retry = body.querySelector('button');
+  if (retry) retry.hidden = !Live.canEdit();
+}
+function showRoundReport(ri) {
+  if (page !== 'dashboard' || !currentRoundSummary(ri) || document.getElementById('round-report-dialog')) return;
+  const dialog = document.createElement('dialog');
+  dialog.id = 'round-report-dialog'; dialog.className = 'round-report-dialog'; dialog.dataset.round = ri;
+  dialog.setAttribute('aria-labelledby', 'round-report-title');
+  dialog.innerHTML = `<div class="round-report-header"><div class="eyebrow green">ROUND 0${ri+1} · ${COURSES[ri]}<br>AI ROUND REPORT</div><button type="button" class="text-button" data-report-close aria-label="Close round report" autofocus>Close <span aria-hidden="true">×</span></button></div><div class="round-report-content"></div>`;
+  document.body.append(dialog);
+  dialog.querySelector('[data-report-close]').onclick = () => dialog.close();
+  dialog.addEventListener('click', event => {
+    const retry = event.target.closest('[data-action]');
+    if (retry && Live.canEdit()) Live.action(retry.dataset.action);
+    if (event.target === dialog) {
+      const rect = dialog.getBoundingClientRect();
+      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+    }
+  });
+  dialog.addEventListener('close', () => {
+    dialog.remove(); document.body.classList.remove('report-open');
+    app.querySelector(`[data-report-round="${ri}"]`)?.focus({preventScroll:true});
+  });
+  syncRoundReportDialog();
+  document.body.classList.add('report-open');
+  dialog.showModal();
+}
 function decorateRoundReports() {
   if (!app.querySelector) return;
-  app.querySelector('.round-reports')?.remove();
   app.querySelectorAll('.report-jump').forEach(link => link.remove());
   const grid = page === 'dashboard' ? app.querySelector('.competition-grid') : null;
-  if (!grid || !summaryBasis) return;
-  const reports = roundSummaries.map((summary, ri) => {
-    const r = data.rounds[ri], rows = ri === 3 ? r.teamScores : r.scores;
-    if (!summary || !rows.every(row => row.every(Golf.played)) || JSON.stringify(reportInputs(data,ri)) !== JSON.stringify(reportInputs(summaryBasis,ri))) return '';
-    const ready = summary.status === 'ready' && summary.report;
-    const content = ready ? `<h3>${escapeHTML(summary.report.title)}</h3>${summary.report.paragraphs.map(p=>`<p>${escapeHTML(p)}</p>`).join('')}`
-      : `<h3>${summary.status === 'pending' ? 'Writing the round report…' : 'Round report unavailable'}</h3><p>${summary.status === 'pending' ? 'The scores are in. Your AI round report will appear here automatically.' : 'The completed scorecard is available. The round report could not be generated yet.'}</p>${summary.status === 'failed' ? `<button class="button outline" data-action="summary-retry-${ri}" data-admin-only hidden>Retry round report</button>` : ''}`;
-    if (ready) {
-      const link = document.createElement('a'); link.className = 'text-button report-jump';
-      link.href = `#round-report-${ri}`; link.textContent = 'Read round report ↓';
-      grid.children[ri]?.append(link);
+  if (grid) roundSummaries.forEach((_, ri) => {
+    const summary = currentRoundSummary(ri);
+    if (!summary) return;
+    const pending = summary.status === 'pending';
+    const link = document.createElement(pending ? 'span' : 'button');
+    link.className = 'text-button report-jump';
+    link.textContent = pending ? 'Writing round report…' : summary.status === 'ready' ? 'Read round report ↗' : 'Round report unavailable';
+    if (pending) link.setAttribute('role', 'status');
+    else {
+      link.type = 'button'; link.dataset.reportRound = ri;
+      link.setAttribute('aria-haspopup', 'dialog');
+      link.setAttribute('aria-controls', 'round-report-dialog');
     }
-    return `<article id="round-report-${ri}" class="card round-report"><div class="eyebrow green">ROUND 0${ri+1} · ${COURSES[ri]} · AI ROUND REPORT</div>${content}</article>`;
-  }).join('');
-  if (reports) grid.insertAdjacentHTML('afterend', `<div class="round-reports">${reports}</div>`);
+    grid.children[ri]?.append(link);
+  });
+  syncRoundReportDialog();
 }
 function shell(content) {
   app.innerHTML = `<header class="header"><a href="#dashboard" class="brand"><span class="brand-mark">p<span>26</span><i></i></span><span>PORTUGAL<span class="brand-sub">THE GOLF GETAWAY</span></span></a><nav aria-label="Main navigation">${[['dashboard','Leaderboard'],['scorecard','Scorecards'],['players','Players & handicaps'],['rules','The rulebook']].map(([key,label]) => `<button data-page="${key}" class="nav-link ${page === key ? 'active' : ''}">${label}</button>`).join('')}</nav><button class="login-button" data-action="login">Log in</button><span class="trip-tag"><span class="flag-dot"></span> ALGARVE ’26</span></header><div class="live-bar"><span class="access-mode">Viewing live scores · log in to edit</span><span class="save-status" role="status">Connecting…</span></div><main>${content}</main><footer><span><strong>Four golfers. Four rounds. One winner.</strong><br>Made for the fairways. And the clubhouse.</span><div><span class="save-status">Connecting to live scores…</span><button class="text-button" data-action="export">Export scores ↗</button><button class="text-button" data-action="import">Import backup</button><button class="text-button" data-action="history" data-admin-only hidden>Download history JSON</button><button class="text-button" data-action="migrate" hidden>Import this browser’s old scores</button><button class="text-button" data-action="draft" hidden>Download unsaved draft</button><input type="file" id="import" accept="application/json" hidden></div></footer>`;
@@ -138,6 +184,7 @@ function render() { ({ dashboard, scorecard, players, rules }[page] || dashboard
 function navigate(target) { page = target; location.hash = target; render(); window.scrollTo(0,0); }
 app.addEventListener('click', e => {
   const el = e.target.closest('button'); if (!el) return;
+  if (el.dataset.reportRound !== undefined) { showRoundReport(Number(el.dataset.reportRound)); return; }
   if (el.dataset.action) Live.action(el.dataset.action);
   if (el.dataset.page) navigate(el.dataset.page);
   if (el.dataset.round !== undefined) { selected = Number(el.dataset.round); setup = false; newTee = false; navigate('scorecard'); }
