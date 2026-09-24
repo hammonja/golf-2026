@@ -13,6 +13,10 @@ class ConflictError(ValueError):
     pass
 
 
+def max_tee_distance(unit):
+    return 1094 if unit == "yd" else 1000
+
+
 def valid_tee(tee):
     def numbers(key, low, high):
         values = tee.get(key)
@@ -22,7 +26,7 @@ def valid_tee(tee):
             and isinstance(tee.get("name"), str) and 1 <= len(tee["name"].strip()) <= 50
             and tee.get("unit") in ("m", "yd")
             and numbers("pars", 3, 6) and numbers("indexes", 1, 18)
-            and len(set(tee["indexes"])) == 18 and numbers("distances", 1, 1000))
+            and len(set(tee["indexes"])) == 18 and numbers("distances", 1, max_tee_distance(tee["unit"])))
 
 
 def valid_file(mime, body):
@@ -39,7 +43,9 @@ class CourseStore:
         with self.connect() as db:
             db.execute("CREATE TABLE IF NOT EXISTS courses (id INTEGER PRIMARY KEY, content TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS assets (course INTEGER, kind TEXT, mime TEXT, body BLOB, PRIMARY KEY(course,kind))")
-            for course in DEFAULTS:
+            # Once auditing starts, do not silently alter a course on restart.
+            audited = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='golf_events'").fetchone()
+            for course in ([] if audited else DEFAULTS):
                 db.execute("INSERT OR IGNORE INTO courses VALUES (?,?)", (course["id"], json.dumps(course)))
                 # Existing deployments also receive newly bundled references.
                 # Never replace an uploaded document, a tee, or other user edits.
@@ -78,22 +84,25 @@ class CourseStore:
     def update(self, course_id, version, tees=None, asset=None):
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            course = json.loads(db.execute("SELECT content FROM courses WHERE id=?", (course_id,)).fetchone()[0])
-            if type(version) is not int or version != course["version"]:
-                raise ConflictError("Course changed on another device. Reload its details and try again.")
-            if tees is not None:
-                if not isinstance(tees, list) or len(tees) > 12 or not all(valid_tee(t) for t in tees) or len({t['id'] for t in tees}) != len(tees):
-                    raise ValueError("Provide up to 12 valid tees, with 18 pars, unique stroke indexes and distances.")
-                course["tees"] = [{k: t[k] for k in ("id", "name", "unit", "pars", "indexes", "distances")} for t in tees]
-            if asset:
-                kind, name, mime, body = asset
-                if not valid_file(mime, body):
-                    raise ValueError("Upload a PNG, JPEG, WebP image or PDF with a matching file type.")
-                db.execute("INSERT OR REPLACE INTO assets VALUES (?,?,?,?)", (course_id, kind, mime, body))
-                course["assets"][kind] = {"url": f"/api/courses/{course_id}/assets/{kind}", "name": name[:150], "type": mime}
-            course["version"] += 1
-            db.execute("UPDATE courses SET content=? WHERE id=?", (json.dumps(course), course_id))
-            return course
+            return self.update_in_transaction(db, course_id, version, tees, asset)
+
+    def update_in_transaction(self, db, course_id, version, tees=None, asset=None):
+        course = json.loads(db.execute("SELECT content FROM courses WHERE id=?", (course_id,)).fetchone()[0])
+        if type(version) is not int or version != course["version"]:
+            raise ConflictError("Course changed on another device. Reload its details and try again.")
+        if tees is not None:
+            if not isinstance(tees, list) or len(tees) > 12 or not all(valid_tee(t) for t in tees) or len({t['id'] for t in tees}) != len(tees):
+                raise ValueError("Provide up to 12 valid tees, with 18 pars, unique stroke indexes and distances.")
+            course["tees"] = [{k: t[k] for k in ("id", "name", "unit", "pars", "indexes", "distances")} for t in tees]
+        if asset:
+            kind, name, mime, body = asset
+            if not valid_file(mime, body):
+                raise ValueError("Upload a PNG, JPEG, WebP image or PDF with a matching file type.")
+            db.execute("INSERT OR REPLACE INTO assets VALUES (?,?,?,?)", (course_id, kind, mime, body))
+            course["assets"][kind] = {"url": f"/api/courses/{course_id}/assets/{kind}", "name": name[:150], "type": mime}
+        course["version"] += 1
+        db.execute("UPDATE courses SET content=? WHERE id=?", (json.dumps(course), course_id))
+        return course
 
     def asset(self, course_id, kind):
         with self.connect() as db:

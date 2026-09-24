@@ -28,6 +28,7 @@ const vm = require('vm');
 const app = { innerHTML:'', addEventListener(){} };
 const mobileEvents = {};
 const context = vm.createContext({ Golf:G, document:{getElementById:()=>app,addEventListener:(type,handler)=>mobileEvents[type]=handler}, localStorage:{getItem:()=>null,setItem(){}}, location:{hash:''}, window:{addEventListener(){},scrollTo(){}}, console });
+vm.runInContext('const Live={save(){updateRankMovement();},access(){}};',context);
 vm.runInContext(fs.readFileSync('courses.js','utf8'),context);
 vm.runInContext(fs.readFileSync('mobile.js','utf8'),context);
 vm.runInContext(fs.readFileSync('app.js','utf8'),context);

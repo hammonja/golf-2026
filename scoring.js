@@ -82,7 +82,24 @@
     }
     return { players, tiedPrizes };
   }
-  const api = { played, strokes, hole, totals, placingPoints, competition, earnings };
+function standings(data, players, teams, formats) {
+  const rows = players.map((name, p) => ({ name, p, gross: 0, net: 0, stable: 0, holes: 0, bonus: 0, points: 0, round: [] }));
+  data.rounds.forEach((r, ri) => {
+    if (r.ctp !== null) { rows[r.ctp].bonus++; rows[r.ctp].points++; }
+    if (ri === 3) return;
+    const playerTotals = players.map((_, p) => totals(r, p, data.handicaps[p]));
+    // Rank live standings only on holes scored by all four players.
+    const common = r.pars.map((_, i) => r.scores.every(s => played(s[i])));
+    const comparable = players.map((_, p) => r.scores[p].reduce((sum, g, i) => sum + (common[i] ? hole(g, r.pars[i], r.indexes[i], data.handicaps[p]).points : 0), 0));
+    const points = common.some(Boolean) ? placingPoints(comparable) : [0, 0, 0, 0];
+    rows.forEach((row, p) => { const t = playerTotals[p]; row.gross += t.gross; row.net += t.net; row.stable += t.points; row.holes += t.holes; row.points += points[p]; row.round.push({ ...t, ranking: points[p] }); });
+  });
+  rows.sort((a, b) => b.points - a.points);
+  const winnings = earnings(data.rounds,data.handicaps,teams,formats,rows);
+  rows.forEach(row => row.earnings = winnings.players[row.p]);
+  return rows;
+}
+  const api = { played, strokes, hole, totals, placingPoints, competition, earnings, standings };
   if (typeof module !== 'undefined') module.exports = api;
   else root.Golf = api;
 })(typeof window === 'undefined' ? globalThis : window);

@@ -7,7 +7,7 @@ import unittest
 import json
 import tempfile
 
-from app import GolfHandler, ROOT, ROUTES, versioned_index
+from app import GolfHandler, ROOT, ROUTES, versioned_index, configure_server
 from course_store import CourseStore
 
 
@@ -21,7 +21,7 @@ class WebsiteTests(unittest.TestCase):
     def setUpClass(cls):
         cls.directory = tempfile.TemporaryDirectory()
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), QuietHandler)
-        cls.server.course_store = CourseStore(cls.directory.name + "/courses.sqlite3")
+        configure_server(cls.server, cls.directory.name + "/courses.sqlite3")
         cls.thread = Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
 
@@ -35,6 +35,14 @@ class WebsiteTests(unittest.TestCase):
     def request(self, path, method="GET", body=None, headers=None):
         connection = HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
         try:
+            if method == "PUT":
+                login = HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
+                login.request("POST", "/api/login", json.dumps({"username":"admin","password":"hammonja"}), {"Content-Type":"application/json"})
+                response = login.getresponse()
+                cookie = response.getheader("Set-Cookie").split(";", 1)[0]
+                csrf = json.loads(response.read())["csrf"]
+                login.close()
+                headers = {**(headers or {}), "Cookie":cookie, "X-CSRF-Token":csrf}
             connection.request(method, path, body=body, headers=headers or {})
             response = connection.getresponse()
             return response.status, dict(response.getheaders()), response.read()
@@ -64,7 +72,7 @@ class WebsiteTests(unittest.TestCase):
         original = (ROOT / "index.html").read_bytes()
         html = versioned_index(original).decode()
         urls = re.findall(r'(?:src|href)="([^"]+)"', html)
-        self.assertEqual(len(urls), 5)
+        self.assertEqual(len(urls), 6)
         for url in urls:
             self.assertRegex(url, r'\?v=[a-f0-9]{16}$')
             self.assertEqual(self.request(url)[0], 200)

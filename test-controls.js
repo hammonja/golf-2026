@@ -12,6 +12,7 @@ async function main() {
   window.HTMLElement.prototype.scrollIntoView=()=>{};
   window.fetch=async()=>({ok:true,json:async()=>JSON.parse(fs.readFileSync('course_defaults.json','utf8'))});
   const context=dom.getInternalVMContext();
+  vm.runInContext('const Live={save(){updateRankMovement();},access(){},action(){},start(){loadCourseLibrary();}};',context);
   for(const file of ['scoring.js','courses.js','mobile.js','app.js']) vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
   await new Promise(resolve=>setTimeout(resolve,0));
   window.document.querySelector('[data-page="scorecard"]').click();
@@ -27,6 +28,40 @@ async function main() {
   assert(window.document.querySelector('.hole-facts').textContent.includes('418 m'));
   window.document.querySelector('[data-action="setup"]').click();
   assert(window.document.querySelector('#tee-editor'),'Course setup opens the tee editor');
+  const editor = window.document.querySelector('#tee-editor');
+  const unit = editor.elements.unit;
+  const originalDistances = Array.from({length:18},(_,i)=>editor.elements['distance'+i].value);
+  const originalPars = Array.from({length:18},(_,i)=>editor.elements['par'+i].value);
+  const switchUnit = value => { unit.value=value;unit.dispatchEvent(new window.Event('change',{bubbles:true})); };
+  switchUnit('yd');
+  assert.equal(editor.elements.distance0.value,'457','418 metres must convert to 457 yards, not simply be relabelled');
+  assert(editor.querySelector('[data-distance-heading]').textContent.includes('yd'));
+  assert.equal(window.document.querySelector('.hole-distance').textContent,'418 m','Conversion remains a draft until the tee is saved');
+  switchUnit('m');
+  assert.deepEqual(Array.from({length:18},(_,i)=>editor.elements['distance'+i].value),originalDistances);
+  assert.deepEqual(Array.from({length:18},(_,i)=>editor.elements['par'+i].value),originalPars);
+  switchUnit('yd');
+  editor.elements.distance0.value='6';
+  switchUnit('m');
+  assert.equal(editor.elements.distance0.value,'5');
+  switchUnit('yd');
+  assert.equal(editor.elements.distance0.value,'6','Repeated toggles must not accumulate rounding errors');
+  editor.elements.distance0.value='500';
+  switchUnit('m');
+  assert.equal(editor.elements.distance0.value,'457','Convert a manually edited distance from its current unit');
+  editor.elements.distance0.value='';
+  switchUnit('yd');
+  assert.equal(editor.elements.distance0.value,'','Unentered holes stay blank');
+  editor.elements.distance0.value='3.5';
+  switchUnit('m');
+  assert.equal(unit.value,'yd','Invalid distances must be corrected before conversion');
+  assert.equal(editor.elements.distance0.value,'3.5');
+  editor.elements.distance0.value='1094';
+  switchUnit('m');
+  assert.equal(editor.elements.distance0.value,'1000');
+  switchUnit('yd');
+  assert.equal(editor.elements.distance0.value,'1094');
+  assert.equal(editor.elements.distance0.max,'1094');
   window.document.querySelector('[data-action="setup"]').click();
   assert(!window.document.querySelector('#tee-editor'),'Course setup closes the tee editor');
   window.document.querySelector('[data-round="3"]').click();
@@ -52,6 +87,6 @@ async function main() {
   }
   assert.deepEqual(errors,[]);
   dom.window.close();
-  console.log('DOM interaction checks passed: tee selection and setup open/close.');
+  console.log('DOM interaction checks passed: tee selection, unit conversion, round trips, edited/blank/invalid distances, limits and setup open/close.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

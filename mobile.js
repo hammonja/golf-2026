@@ -30,7 +30,7 @@ function mobileHoleEditor() {
     <details class="hole-picker"><summary>Jump to a hole <span>${mobileProgress(hole)}</span></summary><div class="hole-grid">${r.pars.map((_,i) => `<button data-mobile-hole="${i}" class="${scores.every(s=>Golf.played(s[i])) ? 'complete' : ''} ${hole===i ? 'current' : ''}" aria-label="Hole ${i+1}${scores.every(s=>Golf.played(s[i])) ? ', complete' : ', incomplete'}" ${hole===i ? 'aria-current="true"' : ''}>${i+1}</button>`).join('')}</div></details>
     <p class="mobile-entry-help">Tap a score to type, or tap + to start at par.</p>
     <div class="mobile-player-scores">${names.map((name,p) => `<article class="mobile-score-row"><div class="mobile-player-name">${selected===3 ? `<span class="pair-avatars">${TEAMS[3][p].map(avatar).join('')}</span>` : avatar(p)}<div><strong>${name}</strong><small>${selected===3 ? 'Shared team score' : `HCP ${data.handicaps[p]} · ${Golf.strokes(data.handicaps[p], r.indexes[hole])} handicap strokes`}</small></div></div><div class="mobile-stepper"><button data-mobile-step="-1" data-player="${p}" aria-label="Decrease ${name}'s score">−</button><input data-mobile-score="${p}" type="number" inputmode="numeric" pattern="[0-9]*" min="1" max="30" step="1" placeholder="—" value="${scores[p][hole] ?? ''}" aria-label="${name}, hole ${hole+1} gross strokes"><button data-mobile-step="1" data-player="${p}" aria-label="Increase ${name}'s score">+</button><div class="mobile-score-result" data-mobile-result="${p}">${mobileScoreLabel(p,hole)}</div><button class="mobile-clear" data-mobile-clear="${p}" aria-label="Clear ${name}'s hole ${hole+1} score">Clear</button></div></article>`).join('')}</div>
-    <div class="mobile-hole-bottom"><span id="mobile-hole-progress" role="status">${mobileProgress(hole)}</span><button class="button yellow" ${hole===17 ? 'data-page="dashboard"' : 'data-mobile-next'}>${hole===17 ? 'View standings' : 'Next hole'} →</button></div><p class="mobile-save-note">Saves automatically on this phone. You can return to any hole.</p>
+    <div class="mobile-hole-bottom"><span id="mobile-hole-progress" role="status">${mobileProgress(hole)}</span><button class="button yellow" ${hole===17 ? 'data-page="dashboard"' : 'data-mobile-next'}>${hole===17 ? 'View standings' : 'Next hole'} →</button></div><p class="mobile-save-note">Scores are shared live. You can return to any hole.</p>
     <div id="mobile-live-match">${compCard(selected)}</div>
   </section>`;
 }
@@ -52,6 +52,7 @@ function decorateMobile() {
 function refreshMobileEditor(focusSelector) {
   const editor=app.querySelector('.mobile-hole-editor');
   if(editor) editor.outerHTML=mobileHoleEditor();
+  Live.access();
   if(focusSelector) app.querySelector(focusSelector)?.focus({preventScroll:true});
 }
 function commitMobileScore(p,value) {

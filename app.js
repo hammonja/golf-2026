@@ -19,14 +19,13 @@ function valid(s) {
   const score = x => x === null || Golf.played(x);
   return s && array(s.handicaps, 4, h => typeof h === 'number' && Number.isFinite(h) && h >= -10 && h <= 54) && array(s.rounds, 4, r => r && array(r.scores, 4, a => array(a, 18, score)) && array(r.teamScores, 2, a => array(a, 18, score)) && array(r.pars, 18, p => Number.isInteger(p) && p >= 3 && p <= 6) && array(r.indexes, 18, p => Number.isInteger(p) && p >= 1 && p <= 18) && new Set(r.indexes).size === 18 && teeSnapshotValid(r.tee) && typeof r.verified === 'boolean' && (r.ctp === null || Number.isInteger(r.ctp) && r.ctp >= 0 && r.ctp < 4));
 }
-let data = empty(), loadError = false;
-try { const saved = localStorage.getItem(KEY); if (saved) { const parsed = JSON.parse(saved); if (!valid(parsed)) throw Error(); data = parsed; } } catch { loadError = true; }
+let data = empty();
 let page = 'dashboard', selected = 0, setup = false;
 let previousRanks = null, rankMovement = [0, 0, 0, 0];
 const app = document.getElementById('app');
 const icon = (name) => ({ flag: '⚑', trophy: '♜', arrow: '↗', check: '✓' }[name] || name);
 function toast(text) { const el = document.getElementById('toast'); el.textContent = text; el.classList.add('visible'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('visible'), 4000); }
-function save() { updateRankMovement(); try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { toast('Could not save in this browser. Export a backup to keep your scores.'); } }
+function save(action) { Live.save(action); }
 function updateRankMovement() {
   const rows = overall();
   if (!rows.some(row => row.holes || row.bonus)) {
@@ -51,23 +50,7 @@ function movementMarkup(p) {
 function avatar(p) {
   return `<span class="avatar avatar-${p} avatar-photo"><img src="/assets/${PLAYER_PHOTOS[p]}" alt="${PLAYERS[p]}" decoding="async"></span>`;
 }
-function overall() {
-  const rows = PLAYERS.map((name, p) => ({ name, p, gross: 0, net: 0, stable: 0, holes: 0, bonus: 0, points: 0, round: [] }));
-  data.rounds.forEach((r, ri) => {
-    if (r.ctp !== null) { rows[r.ctp].bonus++; rows[r.ctp].points++; }
-    if (ri === 3) return;
-    const totals = PLAYERS.map((_, p) => Golf.totals(r, p, data.handicaps[p]));
-    // Rank live standings only on holes scored by all four players.
-    const common = r.pars.map((_, i) => r.scores.every(s => Golf.played(s[i])));
-    const comparable = PLAYERS.map((_, p) => r.scores[p].reduce((sum, g, i) => sum + (common[i] ? Golf.hole(g, r.pars[i], r.indexes[i], data.handicaps[p]).points : 0), 0));
-    const points = common.some(Boolean) ? Golf.placingPoints(comparable) : [0, 0, 0, 0];
-    rows.forEach((row, p) => { const t = totals[p]; row.gross += t.gross; row.net += t.net; row.stable += t.points; row.holes += t.holes; row.points += points[p]; row.round.push({ ...t, ranking: points[p] }); });
-  });
-  rows.sort((a, b) => b.points - a.points);
-  const winnings = Golf.earnings(data.rounds,data.handicaps,TEAMS,FORMATS,rows);
-  rows.forEach(row => row.earnings = winnings.players[row.p]);
-  return rows;
-}
+function overall() { return Golf.standings(data, PLAYERS, TEAMS, FORMATS); }
 function earningsMarkup(row) {
   const e = row.earnings;
   return `<strong>£${e.earned}</strong><small>${e.projected ? `+ £${e.projected} provisional` : 'confirmed'}</small>`;
@@ -78,9 +61,10 @@ function earningsNote() {
 }
 function scene() { return `<img class="landscape hero-photo" src="/assets/hero-course.png" alt="Golf course at sunset" fetchpriority="high" decoding="async">`; }
 function shell(content) {
-  app.innerHTML = `<header class="header"><a href="#dashboard" class="brand"><span class="brand-mark">p<span>26</span><i></i></span><span>PORTUGAL<span class="brand-sub">THE GOLF GETAWAY</span></span></a><nav aria-label="Main navigation">${[['dashboard','Leaderboard'],['scorecard','Scorecards'],['players','Players & handicaps'],['rules','The rulebook']].map(([key,label]) => `<button data-page="${key}" class="nav-link ${page === key ? 'active' : ''}">${label}</button>`).join('')}</nav><span class="trip-tag"><span class="flag-dot"></span> ALGARVE ’26</span></header><main>${content}</main><footer><span><strong>Four golfers. Four rounds. One winner.</strong><br>Made for the fairways. And the clubhouse.</span><div><span class="save-status">● Saved on this device</span><button class="text-button" data-action="export">Export scores ↗</button><button class="text-button" data-action="import">Import backup</button><input type="file" id="import" accept="application/json" hidden></div></footer>`;
+  app.innerHTML = `<header class="header"><a href="#dashboard" class="brand"><span class="brand-mark">p<span>26</span><i></i></span><span>PORTUGAL<span class="brand-sub">THE GOLF GETAWAY</span></span></a><nav aria-label="Main navigation">${[['dashboard','Leaderboard'],['scorecard','Scorecards'],['players','Players & handicaps'],['rules','The rulebook']].map(([key,label]) => `<button data-page="${key}" class="nav-link ${page === key ? 'active' : ''}">${label}</button>`).join('')}</nav><button class="login-button" data-action="login">Log in</button><span class="trip-tag"><span class="flag-dot"></span> ALGARVE ’26</span></header><div class="live-bar"><span class="access-mode">Viewing live scores · log in to edit</span><span class="save-status" role="status">Connecting…</span></div><main>${content}</main><footer><span><strong>Four golfers. Four rounds. One winner.</strong><br>Made for the fairways. And the clubhouse.</span><div><span class="save-status">Connecting to live scores…</span><button class="text-button" data-action="export">Export scores ↗</button><button class="text-button" data-action="import">Import backup</button><button class="text-button" data-action="history" data-admin-only hidden>Download history JSON</button><button class="text-button" data-action="migrate" hidden>Import this browser’s old scores</button><button class="text-button" data-action="draft" hidden>Download unsaved draft</button><input type="file" id="import" accept="application/json" hidden></div></footer>`;
   decorateCourses();
   decorateMobile();
+  Live.access();
 }
 function compCard(ri) {
   const r = data.rounds[ri], c = Golf.competition(r, data.handicaps, TEAMS[ri], FORMATS[ri]);
@@ -110,7 +94,7 @@ function scorecard() {
   const names = scramble ? TEAMS[ri].map(t => t.map(p => SHORT[p]).join(' & ')) : SHORT;
   const scores = scramble ? r.teamScores : r.scores;
   const total = scores.map((s,p) => scramble ? { gross: s.filter(Golf.played).reduce((a,b) => a+b,0), holes:s.filter(Golf.played).length } : Golf.totals(r,p,data.handicaps[p]));
-  shell(`<div class="page-heading"><div class="eyebrow green">EVERY SHOT COUNTS</div><h1>The scorecards<span>.</span></h1><p>Enter gross strokes. We’ll take care of the numbers.</p></div><div class="round-tabs">${COURSES.map((c,i) => `<button class="${i===ri ? 'selected' : ''}" data-round="${i}"><small>ROUND 0${i+1}</small>${c}</button>`).join('')}</div><div class="score-layout"><section class="card score-panel"><div class="score-heading"><div><div class="eyebrow green">${COURSES[ri]} · ROUND 0${ri+1}</div><h2>${TITLES[ri]}</h2></div><button class="button outline" data-action="setup">${setup ? 'Close course setup' : 'Course setup'} ⚙</button></div>${!r.verified ? '<div class="notice">Course setup needed: select a saved tee, or upload a scorecard and add its tees under Course setup before relying on results.</div>' : ''}${setup ? courseSetup(r) : ''}<p class="score-help">${scramble ? 'Enter one shared gross score per pair. Lowest gross total wins; handicaps do not apply to this round.' : 'All four players play their own ball. Each cell shows net strokes and Stableford points after entry.'} Blank means not played.</p><div class="table-scroll"><table class="score-table"><thead><tr><th>HOLE</th><th>PAR</th><th>SI</th>${names.map((n,p) => `<th>${n}${!scramble ? `<small>HCP ${data.handicaps[p]}</small>` : ''}</th>`).join('')}</tr></thead><tbody>${Array.from({length:18},(_,i) => `<tr><td class="hole-number">${i+1}</td><td>${r.pars[i]}</td><td class="muted">${r.indexes[i]}</td>${scores.map((s,p) => { const h = scramble ? null : Golf.hole(s[i],r.pars[i],r.indexes[i],data.handicaps[p]); return `<td><input class="score-input" type="number" inputmode="numeric" min="1" max="30" step="1" value="${s[i] ?? ''}" data-score="${p}" data-hole="${i}" aria-label="${names[p]}, hole ${i+1} gross strokes"><small class="hole-result">${h ? `${h.net} net · ${h.points} pts` : '—'}</small></td>`; }).join('')}</tr>${i === 8 ? `<tr class="subtotal"><td>OUT</td><td>${r.pars.slice(0,9).reduce((a,b)=>a+b,0)}</td><td></td>${scores.map(s => `<td>${s.slice(0,9).some(Golf.played) ? s.slice(0,9).filter(Golf.played).reduce((a,b)=>a+b,0) : '—'}</td>`).join('')}</tr>` : ''}`).join('')}<tr class="subtotal"><td>IN</td><td>${r.pars.slice(9).reduce((a,b)=>a+b,0)}</td><td></td>${scores.map(s => `<td>${s.slice(9).some(Golf.played) ? s.slice(9).filter(Golf.played).reduce((a,b)=>a+b,0) : '—'}</td>`).join('')}</tr><tr class="score-total"><td>TOTAL</td><td>${r.pars.reduce((a,b)=>a+b,0)}</td><td></td>${total.map(t => `<td>${t.holes ? t.gross : '—'}${!scramble ? `<small>${t.net} net · ${t.points} pts</small>` : ''}</td>`).join('')}</tr></tbody></table></div></section><aside class="score-sidebar">${compCard(ri)}<section class="card pin-card"><span class="pin-icon">⚑</span><div class="eyebrow green">A LITTLE CLOSER. A POINT BETTER.</div><h3>Closest to the pin</h3><p>Last par 3 of the round${r.verified && r.pars.includes(3) ? ` · hole ${r.pars.lastIndexOf(3)+1}` : ''}. One bonus point on the overall leaderboard.</p><label for="ctp">Who stuck it closest?</label><select id="ctp"><option value="">Not awarded yet</option>${PLAYERS.map((p,i) => `<option value="${i}" ${r.ctp === i ? 'selected' : ''}>${p}</option>`).join('')}</select></section><div class="sidebar-note">Scores save automatically on this device. Export a backup from the footer to move them to another device.</div></aside></div>`);
+  shell(`<div class="page-heading"><div class="eyebrow green">EVERY SHOT COUNTS</div><h1>The scorecards<span>.</span></h1><p>Enter gross strokes. We’ll take care of the numbers.</p></div><div class="round-tabs">${COURSES.map((c,i) => `<button class="${i===ri ? 'selected' : ''}" data-round="${i}"><small>ROUND 0${i+1}</small>${c}</button>`).join('')}</div><div class="score-layout"><section class="card score-panel"><div class="score-heading"><div><div class="eyebrow green">${COURSES[ri]} · ROUND 0${ri+1}</div><h2>${TITLES[ri]}</h2></div><button class="button outline" data-action="setup">${setup ? 'Close course setup' : 'Course setup'} ⚙</button></div>${!r.verified ? '<div class="notice">Course setup needed: select a saved tee, or upload a scorecard and add its tees under Course setup before relying on results.</div>' : ''}${setup ? courseSetup(r) : ''}<p class="score-help">${scramble ? 'Enter one shared gross score per pair. Lowest gross total wins; handicaps do not apply to this round.' : 'All four players play their own ball. Each cell shows net strokes and Stableford points after entry.'} Blank means not played.</p><div class="table-scroll"><table class="score-table"><thead><tr><th>HOLE</th><th>PAR</th><th>SI</th>${names.map((n,p) => `<th>${n}${!scramble ? `<small>HCP ${data.handicaps[p]}</small>` : ''}</th>`).join('')}</tr></thead><tbody>${Array.from({length:18},(_,i) => `<tr><td class="hole-number">${i+1}</td><td>${r.pars[i]}</td><td class="muted">${r.indexes[i]}</td>${scores.map((s,p) => { const h = scramble ? null : Golf.hole(s[i],r.pars[i],r.indexes[i],data.handicaps[p]); return `<td><input class="score-input" type="number" inputmode="numeric" min="1" max="30" step="1" value="${s[i] ?? ''}" data-score="${p}" data-hole="${i}" aria-label="${names[p]}, hole ${i+1} gross strokes"><small class="hole-result">${h ? `${h.net} net · ${h.points} pts` : '—'}</small></td>`; }).join('')}</tr>${i === 8 ? `<tr class="subtotal"><td>OUT</td><td>${r.pars.slice(0,9).reduce((a,b)=>a+b,0)}</td><td></td>${scores.map(s => `<td>${s.slice(0,9).some(Golf.played) ? s.slice(0,9).filter(Golf.played).reduce((a,b)=>a+b,0) : '—'}</td>`).join('')}</tr>` : ''}`).join('')}<tr class="subtotal"><td>IN</td><td>${r.pars.slice(9).reduce((a,b)=>a+b,0)}</td><td></td>${scores.map(s => `<td>${s.slice(9).some(Golf.played) ? s.slice(9).filter(Golf.played).reduce((a,b)=>a+b,0) : '—'}</td>`).join('')}</tr><tr class="score-total"><td>TOTAL</td><td>${r.pars.reduce((a,b)=>a+b,0)}</td><td></td>${total.map(t => `<td>${t.holes ? t.gross : '—'}${!scramble ? `<small>${t.net} net · ${t.points} pts</small>` : ''}</td>`).join('')}</tr></tbody></table></div></section><aside class="score-sidebar">${compCard(ri)}<section class="card pin-card"><span class="pin-icon">⚑</span><div class="eyebrow green">A LITTLE CLOSER. A POINT BETTER.</div><h3>Closest to the pin</h3><p>Last par 3 of the round${r.verified && r.pars.includes(3) ? ` · hole ${r.pars.lastIndexOf(3)+1}` : ''}. One bonus point on the overall leaderboard.</p><label for="ctp">Who stuck it closest?</label><select id="ctp"><option value="">Not awarded yet</option>${PLAYERS.map((p,i) => `<option value="${i}" ${r.ctp === i ? 'selected' : ''}>${p}</option>`).join('')}</select></section><div class="sidebar-note">Scores and standings update live for everyone. Log in as admin to make changes.</div></aside></div>`);
 }
 function courseSetup(r) { return courseLibrarySetup(selected); }
 
@@ -125,6 +109,7 @@ function render() { ({ dashboard, scorecard, players, rules }[page] || dashboard
 function navigate(target) { page = target; location.hash = target; render(); window.scrollTo(0,0); }
 app.addEventListener('click', e => {
   const el = e.target.closest('button'); if (!el) return;
+  if (el.dataset.action) Live.action(el.dataset.action);
   if (el.dataset.page) navigate(el.dataset.page);
   if (el.dataset.round !== undefined) { selected = Number(el.dataset.round); setup = false; newTee = false; navigate('scorecard'); }
   if (el.dataset.action === 'setup') { setup = !setup; render(); }
@@ -148,14 +133,12 @@ app.addEventListener('change', async e => {
     window.scrollTo(0,oldScroll);
     if (!el.dataset.mobileCommit) refreshMobileEditor();
   }
-  if (el.dataset.hcp !== undefined) { const n=Number(el.value); if(el.value==='' || !Number.isInteger(n) || n < -10 || n > 54) { toast('Enter a whole playing handicap between -10 and 54.'); render(); return; } data.handicaps[Number(el.dataset.hcp)]=n; save(); toast('Handicap saved. All standings recalculated.'); }
-  if(el.id==='ctp') { data.rounds[selected].ctp=el.value==='' ? null : Number(el.value); save(); toast('Closest-to-the-pin bonus updated.'); }
-  if(el.id==='import' && el.files[0]) { try { const parsed=JSON.parse(await el.files[0].text()); if(!valid(parsed)) throw Error(); if(!confirm('Replace the scores and handicaps on this device with this backup?')) return; data=parsed; save(); render(); toast('Backup imported.'); } catch { toast('That file is not a valid Portugal 2026 backup. Your scores are unchanged.'); } }
+  if (el.dataset.hcp !== undefined) { const n=Number(el.value); if(el.value==='' || !Number.isInteger(n) || n < -10 || n > 54) { toast('Enter a whole playing handicap between -10 and 54.'); render(); return; } data.handicaps[Number(el.dataset.hcp)]=n; save();  }
+  if(el.id==='ctp') { data.rounds[selected].ctp=el.value==='' ? null : Number(el.value); save();  }
+  if(el.id==='import' && el.files[0]) { try { const parsed=JSON.parse(await el.files[0].text()); if(!valid(parsed)) throw Error(); if(!confirm('Replace the shared scores, tees and handicaps for everyone with this backup? This will be recorded in history.')) return; data=parsed; save('backup.imported'); render(); } catch { toast('That file is not a valid Portugal 2026 backup. Your scores are unchanged.'); } }
 });
 window.addEventListener('hashchange',()=> { const target=location.hash.slice(1); if(['dashboard','scorecard','players','rules'].includes(target)) {page=target;render();} });
 if(['dashboard','scorecard','players','rules'].includes(location.hash.slice(1))) page=location.hash.slice(1);
 updateRankMovement();
 render();
-if(loadError) toast('Saved data could not be loaded. Import a valid backup to restore your scores.');
-
-if (typeof fetch === 'function') loadCourseLibrary();
+if (typeof fetch === 'function') Live.start();

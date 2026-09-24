@@ -1,7 +1,35 @@
 let courseLibrary = null, courseLoadError = '', newTee = false;
 const escapeHTML = value => String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const maxTeeDistance = unit => unit === 'yd' ? 1094 : 1000;
 function teeSnapshotValid(tee) {
-  return tee === undefined || tee === null || (typeof tee.id==='string' && typeof tee.name==='string' && tee.name.length<=50 && ['m','yd'].includes(tee.unit) && Array.isArray(tee.distances) && tee.distances.length===18 && tee.distances.every(d=>Number.isInteger(d) && d>0 && d<=1000));
+  return tee === undefined || tee === null || (typeof tee.id==='string' && typeof tee.name==='string' && tee.name.length<=50 && ['m','yd'].includes(tee.unit) && Array.isArray(tee.distances) && tee.distances.length===18 && tee.distances.every(d=>Number.isInteger(d) && d>0 && d<=maxTeeDistance(tee.unit)));
+}
+function convertTeeDistances(form, unit) {
+  const previous = form.dataset.distanceUnit;
+  if (unit === previous) return;
+  const inputs = Array.from(form.querySelectorAll('.tee-hole-row input[name^="distance"]'));
+  if (inputs.some(input => input.validity.badInput || (input.value !== '' && (!Number.isInteger(Number(input.value)) || Number(input.value) < 1 || Number(input.value) > maxTeeDistance(previous))))) {
+    form.elements.unit.value = previous;
+    toast('Enter valid whole distances, or leave unentered holes blank, before changing units.');
+    return;
+  }
+  inputs.forEach((input, hole) => {
+    if (input.value !== '') {
+      // Retain the unrounded distance while toggling; rebase after a manual edit.
+      const metres = input.dataset.convertedValue === input.value && input.dataset.metres !== undefined
+        ? Number(input.dataset.metres) : Number(input.value) * (previous === 'yd' ? 0.9144 : 1);
+      input.value = String(Math.round(unit === 'yd' ? metres / 0.9144 : metres));
+      input.dataset.metres = String(metres);
+      input.dataset.convertedValue = input.value;
+    } else {
+      delete input.dataset.metres;
+      delete input.dataset.convertedValue;
+    }
+    input.max = String(maxTeeDistance(unit));
+    input.setAttribute('aria-label', `Hole ${hole + 1} distance in ${unit === 'yd' ? 'yards' : 'metres'}`);
+  });
+  form.dataset.distanceUnit = unit;
+  form.querySelector('[data-distance-heading]').textContent = `Distance (${unit})`;
 }
 function applyTee(ri,tee) {
   const round=data.rounds[ri];
@@ -28,6 +56,7 @@ async function loadCourseLibrary() {
     if(panel) panel.outerHTML=courseSelection(selected);
     const holder=app.querySelector('.course-library-setup');
     if(holder) holder.outerHTML=courseLibrarySetup(selected);
+    Live.access();
   }
 }
 function courseSelection(ri) {
@@ -43,7 +72,7 @@ function courseLibrarySetup(ri) {
   const tee=newTee ? null : current || course.tees[0];
   const pars=tee?.pars || data.rounds[ri].pars;
   const indexes=tee?.indexes || data.rounds[ri].indexes;
-  return `<section class="course-library-setup"><h3>Course map & scorecard</h3><p>Upload a PDF, PNG, JPEG or WebP (up to 10 MB each). Files and tee definitions are saved on the webserver for all devices. Images and PDFs are references; enter each tee’s numbers below once.</p><div class="course-upload-grid">${['map','scorecard'].map(kind=>{const file=course.assets[kind];return `<section class="course-upload"><h4>${kind==='map' ? 'Course map' : 'Original scorecard'}</h4>${file ? `<a href="${escapeHTML(file.url)}" target="_blank" rel="noopener">${file.type.startsWith('image/') ? `<img src="${escapeHTML(file.url)}?v=${course.version}" alt="${escapeHTML(course.name)} ${kind}" loading="lazy">` : '<span class="pdf-reference">PDF ↗</span>'}<span>${escapeHTML(file.name)}</span></a>${file.note ? `<p class="course-document-note">${escapeHTML(file.note)}</p>` : ''}${file.source ? `<a class="course-document-source" href="${escapeHTML(file.source)}" target="_blank" rel="noopener">Document source</a>` : ''}` : '<p>No file uploaded yet.</p>'}<label class="upload-label">${file ? 'Replace file' : 'Upload file'}<input type="file" data-course-upload="${kind}" accept="image/png,image/jpeg,image/webp,application/pdf"></label></section>`;}).join('')}</div>${course.source ? `<p class="fine-print">Official ${escapeHTML(course.name)} reference: <a href="${escapeHTML(course.source)}" target="_blank" rel="noopener">course website ↗</a></p>` : ''}<div class="tee-editor-heading"><div><h3>${tee ? `Edit ${escapeHTML(tee.name)} tee` : 'Add a tee'}</h3><p>Save a tee once, then select it whenever you play.</p></div><button class="button outline" data-new-tee>${newTee ? 'Cancel new tee' : 'Add another tee'}</button></div><form id="tee-editor" data-tee-id="${escapeHTML(tee?.id || '')}"><div class="tee-fields"><label>Tee name / colour<input name="teeName" maxlength="50" required value="${escapeHTML(tee?.name || '')}" placeholder="e.g. Yellow or 53"></label><label>Distances in<select name="unit"><option value="m" ${tee?.unit!=='yd' ? 'selected' : ''}>Metres</option><option value="yd" ${tee?.unit==='yd' ? 'selected' : ''}>Yards</option></select></label></div><div class="tee-holes"><div class="tee-hole-header"><span>Hole</span><span>Par</span><span>Stroke index</span><span>Distance</span></div>${pars.map((par,i)=>`<div class="tee-hole-row"><strong>${i+1}</strong><input name="par${i}" aria-label="Hole ${i+1} par" type="number" inputmode="numeric" min="3" max="6" step="1" required value="${par}"><input name="si${i}" aria-label="Hole ${i+1} stroke index" type="number" inputmode="numeric" min="1" max="18" step="1" required value="${indexes[i]}"><input name="distance${i}" aria-label="Hole ${i+1} distance" type="number" inputmode="numeric" min="1" max="1000" step="1" required value="${tee?.distances[i] || ''}"></div>`).join('')}</div><label class="tee-confirm"><input type="checkbox" required> I have checked these 18 holes against the scorecard.</label><p class="fine-print">Use every stroke index from 1 to 18 once. Changing the last par 3 clears an existing nearest-the-pin award so it can be awarded on the correct hole.</p><button type="submit" class="button green-button">Save and play this tee ✓</button></form></section>`;
+  return `<section class="course-library-setup"><h3>Course map & scorecard</h3><p>Upload a PDF, PNG, JPEG or WebP (up to 10 MB each). Files and tee definitions are saved on the webserver for all devices. Images and PDFs are references; enter each tee’s numbers below once.</p><div class="course-upload-grid">${['map','scorecard'].map(kind=>{const file=course.assets[kind];return `<section class="course-upload"><h4>${kind==='map' ? 'Course map' : 'Original scorecard'}</h4>${file ? `<a href="${escapeHTML(file.url)}" target="_blank" rel="noopener">${file.type.startsWith('image/') ? `<img src="${escapeHTML(file.url)}?v=${course.version}" alt="${escapeHTML(course.name)} ${kind}" loading="lazy">` : '<span class="pdf-reference">PDF ↗</span>'}<span>${escapeHTML(file.name)}</span></a>${file.note ? `<p class="course-document-note">${escapeHTML(file.note)}</p>` : ''}${file.source ? `<a class="course-document-source" href="${escapeHTML(file.source)}" target="_blank" rel="noopener">Document source</a>` : ''}` : '<p>No file uploaded yet.</p>'}<label class="upload-label">${file ? 'Replace file' : 'Upload file'}<input type="file" data-course-upload="${kind}" accept="image/png,image/jpeg,image/webp,application/pdf"></label></section>`;}).join('')}</div>${course.source ? `<p class="fine-print">Official ${escapeHTML(course.name)} reference: <a href="${escapeHTML(course.source)}" target="_blank" rel="noopener">course website ↗</a></p>` : ''}<div class="tee-editor-heading"><div><h3>${tee ? `Edit ${escapeHTML(tee.name)} tee` : 'Add a tee'}</h3><p>Save a tee once, then select it whenever you play.</p></div><button class="button outline" data-new-tee>${newTee ? 'Cancel new tee' : 'Add another tee'}</button></div><form id="tee-editor" data-distance-unit="${tee?.unit || 'm'}" data-tee-id="${escapeHTML(tee?.id || '')}"><div class="tee-fields"><label>Tee name / colour<input name="teeName" maxlength="50" required value="${escapeHTML(tee?.name || '')}" placeholder="e.g. Yellow or 53"></label><label>Distances in<select name="unit" aria-describedby="tee-unit-help"><option value="m" ${tee?.unit!=='yd' ? 'selected' : ''}>Metres</option><option value="yd" ${tee?.unit==='yd' ? 'selected' : ''}>Yards</option></select></label></div><p class="fine-print" id="tee-unit-help">Changing units converts entered distances, rounded to whole metres or yards. For a new tee, choose the unit before entering distances. Choose Save and play this tee to apply your changes.</p><div class="tee-holes"><div class="tee-hole-header"><span>Hole</span><span>Par</span><span>Stroke index</span><span data-distance-heading>Distance (${tee?.unit || 'm'})</span></div>${pars.map((par,i)=>`<div class="tee-hole-row"><strong>${i+1}</strong><input name="par${i}" aria-label="Hole ${i+1} par" type="number" inputmode="numeric" min="3" max="6" step="1" required value="${par}"><input name="si${i}" aria-label="Hole ${i+1} stroke index" type="number" inputmode="numeric" min="1" max="18" step="1" required value="${indexes[i]}"><input name="distance${i}" aria-label="Hole ${i+1} distance in ${tee?.unit==='yd' ? 'yards' : 'metres'}" type="number" inputmode="numeric" min="1" max="${maxTeeDistance(tee?.unit)}" step="1" required value="${tee?.distances[i] || ''}"></div>`).join('')}</div><label class="tee-confirm"><input type="checkbox" required> I have checked these 18 holes against the scorecard.</label><p class="fine-print">Use every stroke index from 1 to 18 once. Changing the last par 3 clears an existing nearest-the-pin award so it can be awarded on the correct hole.</p><button type="submit" class="button green-button">Save and play this tee ✓</button></form></section>`;
 }
 function decorateCourses() {
   if(page!=='scorecard' || !app.querySelector) return;
@@ -53,9 +82,10 @@ function decorateCourses() {
   });
 }
 async function courseRequest(ri,url,options) {
-  const response=await fetch(url,options);
-  const result=await response.json();
-  if(!response.ok) throw Error(result.error || 'Could not save the course. Please retry.');
+  if (!Live.canEdit()) throw Error('Log in as admin to edit.');
+  let result;
+  try { result=await Live.request(url,options); }
+  catch(error) { if(error.snapshot) { courseLibrary=error.snapshot.courses; render(); } throw error; }
   courseLibrary[ri]=result;
   return result;
 }
@@ -71,6 +101,7 @@ document.addEventListener('click',e=> {
 });
 document.addEventListener('change',async e=> {
   const input=e.target;
+  if(input.name==='unit' && input.form?.id==='tee-editor') convertTeeDistances(input.form,input.value);
   if(input.id==='course-tee') {
     const tee=courseLibrary?.[selected]?.tees.find(t=>t.id===input.value);
     if(tee){applyTee(selected,tee);newTee=false;render();toast('Tee selected. Scores recalculated.');}
