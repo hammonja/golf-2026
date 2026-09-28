@@ -104,7 +104,7 @@ async function browserTests() {
   w.Image=class {set src(value){queueMicrotask(()=>this.onerror?.());}};
   w.EventSource=class {constructor(){this.listeners={};streams.push(this);}addEventListener(type,fn){this.listeners[type]=fn;}};
   let snapshot={version:4,sequence:12,courses:JSON.parse(fs.readFileSync('course_defaults.json','utf8')),summaries:[null,null,null,null],
-    state:{handicaps:[0,0,0,0],rounds:Array.from({length:4},()=>({scores:Array.from({length:4},()=>Array(18).fill(null)),teamScores:Array.from({length:2},()=>Array(18).fill(null)),pars:Array(18).fill(4),indexes:Array.from({length:18},(_,i)=>i+1),verified:false,ctp:null}))}};
+    state:{handicaps:Array.from({length:4},()=>[0,0,0,0]),rounds:Array.from({length:4},()=>({scores:Array.from({length:4},()=>Array(18).fill(null)),teamScores:Array.from({length:2},()=>Array(18).fill(null)),pars:Array(18).fill(4),indexes:Array.from({length:18},(_,i)=>i+1),verified:false,ctp:null}))}};
   const uploadMock=serverMock();let published=[], signedIn=false, deleteFailure=0, deleteCalls=0, staleGallery=null;
   w.fetch=async(url,options={})=> {
     requests.push({url,method:options.method});

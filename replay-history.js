@@ -11,7 +11,7 @@ function view(model, history) {
   return {
     overall: Golf.standings(state, history.players, history.teams, history.formats),
     rounds: state.rounds.map((round, i) => {
-      const result = Golf.competition(round, state.handicaps, history.teams[i], history.formats[i]);
+      const result = Golf.competition(round, Golf.roundHandicaps(state.handicaps,i), history.teams[i], history.formats[i]);
       const values = result.ranking || result.totals;
       const best = history.formats[i] === 'scramble' ? Math.min(...values) : Math.max(...values);
       return {course: history.courses[i], verified: round.verified, ...result,
@@ -29,12 +29,12 @@ function scoreFacts(event, model, history) {
       before: change.before, gross, par: round.pars[hole], versusPar, verifiedCourse: round.verified,
       action: gross === null ? 'score cleared' : change.before === null ? 'score entered' : 'score corrected',
       grossResult: gross === null ? null : ({'-3':'albatross','-2':'eagle','-1':'birdie','0':'par','1':'bogey','2':'double bogey'}[versusPar] || `${versusPar > 0 ? '+' : ''}${versusPar} to par`),
-      ...(kind === 'scores' ? {scoring: Golf.hole(gross, round.pars[hole], round.indexes[hole], model.state.handicaps[player])} : {})};
+      ...(kind === 'scores' ? {scoring: Golf.hole(gross, round.pars[hole], round.indexes[hole], Golf.roundHandicaps(model.state.handicaps,ri)[player])} : {})};
   });
 }
 
 function replay(history, through = Infinity) {
-  if (history.schema !== 'portugal2026.history' || history.schemaVersion !== 1 || history.scoringVersion !== 1 || !Array.isArray(history.events) || !history.events.length) throw Error('Unsupported or empty history.');
+  if (history.schema !== 'portugal2026.history' || history.schemaVersion !== 1 || ![1,2].includes(history.scoringVersion) || !Array.isArray(history.events) || !history.events.length) throw Error('Unsupported or empty history.');
   let chain = '', model = null, sequence = 0;
   const timeline = [];
   for (const event of history.events) {

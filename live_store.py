@@ -1,5 +1,6 @@
 """Shared scores and an atomic, append-only event history (standard library only)."""
 import base64
+import copy
 import hashlib
 import json
 import math
@@ -18,13 +19,13 @@ def encoded(value):
 
 
 def empty_state():
-    return {"handicaps": [0] * 4, "rounds": [
+    return {"handicaps": [[0] * 4 for _ in range(4)], "rounds": [
         {"scores": [[None] * 18 for _ in range(4)], "teamScores": [[None] * 18 for _ in range(2)],
          "pars": [4] * 18, "indexes": list(range(1, 19)), "verified": False, "ctp": None}
         for _ in range(4)]}
 
 
-def validate_state(state):
+def validate_state(state, allow_legacy=False):
     def array(value, length, check):
         return isinstance(value, list) and len(value) == length and all(check(x) for x in value)
 
@@ -36,8 +37,13 @@ def validate_state(state):
 
     if not isinstance(state, dict) or set(state) != {"handicaps", "rounds"}:
         raise ValueError("Invalid score backup.")
-    if not array(state["handicaps"], 4, lambda h: type(h) in (int, float) and math.isfinite(h) and -10 <= h <= 54):
-        raise ValueError("Provide four playing handicaps between -10 and 54.")
+    handicap = lambda h: type(h) in (int, float) and math.isfinite(h) and -10 <= h <= 54
+    if not array(state["handicaps"], 4, lambda row: array(row, 4, handicap)):
+        if allow_legacy and array(state["handicaps"], 4, handicap):
+            state = copy.deepcopy(state)
+            state["handicaps"] = [state["handicaps"][:] for _ in range(4)]
+        else:
+            raise ValueError("Provide four playing handicaps for each round, between -10 and 54. Refresh the app if it still shows one handicap per player.")
     if not isinstance(state["rounds"], list) or len(state["rounds"]) != 4:
         raise ValueError("Provide four rounds.")
     for r in state["rounds"]:
@@ -107,6 +113,14 @@ class LiveStore:
                 self.append(db, "history.started", "system", None, [], {
                     "checkpoint": {"state": state, "courses": courses_data, "assets": assets, "bundledFiles": bundled},
                     "note": "Earlier browser edits cannot be recovered; imported scores enter history at import time."})
+            version, content = db.execute("SELECT version,content FROM golf_state WHERE id=1").fetchone()
+            before = json.loads(content)
+            migrated = validate_state(before, allow_legacy=True)
+            if migrated != before:
+                db.execute("UPDATE golf_state SET version=?,content=? WHERE id=1", (version + 1, encoded(migrated)))
+                self.append(db, "handicaps.rounds_enabled", "system", None,
+                            changes(before, migrated, ["state"]),
+                            {"version": version + 1, "note": "Existing player handicaps copied to all four rounds; scoring is unchanged."})
 
     def append(self, db, kind, actor, session, edits, details=None):
         event = {"timestamp": now(), "type": kind, "actor": actor, "session": session,
@@ -135,7 +149,7 @@ class LiveStore:
     def save(self, payload, session):
         if not isinstance(payload, dict):
             raise ValueError("Invalid score request.")
-        state = validate_state(payload.get("state"))
+        state = validate_state(payload.get("state"), allow_legacy=payload.get("action") in ("backup.imported", "browser.imported"))
         request_id = payload.get("requestId", "")
         if not isinstance(request_id, str) or not re.fullmatch(r"[a-zA-Z0-9-]{16,100}", request_id):
             raise ValueError("Missing save request identifier.")
@@ -197,7 +211,7 @@ class LiveStore:
                 chain = hashlib.sha256((chain + "\n" + canonical).encode()).hexdigest()
                 event["integrity"] = {"canonical": canonical, "sha256": chain}
             return {"schema": "portugal2026.history", "schemaVersion": 1, "exportedAt": now(),
-                    "scoringVersion": 1, "players": ["James Hammond", "Ben Nowak", "Mark Shaw", "Owen Shaw"],
+                    "scoringVersion": 2, "players": ["James Hammond", "Ben Nowak", "Mark Shaw", "Owen Shaw"],
                     "courses": ["Ombria", "O’Connor", "Faldo", "Salgados"],
                     "formats": ["match", "best", "solo", "scramble"],
                     "teams": [[[0, 3], [2, 1]], [[1, 3], [2, 0]], [], [[3, 2], [0, 1]]],

@@ -110,7 +110,7 @@ class SharedGolfTests(unittest.TestCase):
 
     def test_state_conflicts_idempotency_and_restart(self):
         payload = self.payload()
-        payload['state']['handicaps'][0] = 18
+        payload['state']['handicaps'][0][0] = 18
         payload['state']['rounds'][0]['scores'][0][0] = 3
         status, _, saved = self.request('/api/state', 'PUT', payload, self.credentials)
         self.assertEqual(status, 200)
@@ -119,7 +119,7 @@ class SharedGolfTests(unittest.TestCase):
         self.assertEqual(self.request('/api/state', 'PUT', payload, self.credentials)[2]['version'], 1)
         stale = copy.deepcopy(payload)
         stale['requestId'] = uuid.uuid4().hex
-        stale['state']['handicaps'][1] = 9
+        stale['state']['handicaps'][0][1] = 9
         self.assertEqual(self.request('/api/state', 'PUT', stale, self.credentials)[0], 409)
         stale['requestId'] = payload['requestId']
         self.assertEqual(self.request('/api/state', 'PUT', stale, self.credentials)[0], 400)
@@ -133,14 +133,14 @@ class SharedGolfTests(unittest.TestCase):
         self.assertNotIn(self.credentials['Cookie'].split('=')[1], json.dumps(history))
         # A lost response retried after someone else's edit must not rebase queued drafts.
         newer = self.payload()
-        newer['state']['handicaps'][2] = 12
+        newer['state']['handicaps'][0][2] = 12
         self.assertEqual(self.request('/api/state', 'PUT', newer, self.credentials)[0], 200)
         self.assertEqual(self.request('/api/state', 'PUT', payload, self.credentials)[0], 409)
 
     def test_concurrent_writes_only_one_wins(self):
         payloads = [self.payload(), self.payload()]
         for i, payload in enumerate(payloads):
-            payload['state']['handicaps'][i] = 10 + i
+            payload['state']['handicaps'][0][i] = 10 + i
         with ThreadPoolExecutor(2) as pool:
             statuses = list(pool.map(lambda p: self.request('/api/state', 'PUT', p, self.credentials)[0], payloads))
         self.assertEqual(sorted(statuses), [200, 409])
@@ -153,12 +153,12 @@ class SharedGolfTests(unittest.TestCase):
         for bad in (None, [], {}, {'state':{'handicaps':[0]*4, 'rounds':[None]*4}}):
             self.assertEqual(self.request('/api/state', 'PUT', bad or [], self.credentials)[0], 400)
         payload = self.payload()
-        payload['state']['handicaps'][0] = 20
+        payload['state']['handicaps'][0][0] = 20
         import sqlite3
         with patch.object(self.server.live_store, 'append', side_effect=sqlite3.OperationalError('disk full')):
             self.assertEqual(self.request('/api/state', 'PUT', payload, self.credentials)[0], 500)
         self.assertEqual(self.request('/api/state')[2]['version'], 0)
-        self.assertEqual(self.request('/api/state')[2]['state']['handicaps'][0], 0)
+        self.assertEqual(self.request('/api/state')[2]['state']['handicaps'][0][0], 0)
 
     def test_course_upload_and_import_are_replayable(self):
         before = self.request('/api/state')[2]

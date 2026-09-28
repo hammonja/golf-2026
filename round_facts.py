@@ -25,13 +25,18 @@ def complete(state, ri):
     return all(played(score) for row in scores for score in row)
 
 
+def round_handicaps(state, ri):
+    handicaps = state["handicaps"]
+    return handicaps[ri] if isinstance(handicaps[ri], list) else handicaps
+
+
 def inputs(state, ri):
     r = state["rounds"][ri]
     keys = ["teamScores" if ri == 3 else "scores", "pars", "verified", "ctp", "tee"]
     if ri != 3:
         keys.append("indexes")
     return {"round": {key: r.get(key) for key in keys},
-            "handicaps": state["handicaps"] if ri != 3 else None}
+            "handicaps": round_handicaps(state, ri) if ri != 3 else None}
 
 
 def signature(state, ri):
@@ -50,7 +55,7 @@ def hole(gross, par, index, handicap):
 
 
 def competition(state, ri):
-    r, handicaps = state["rounds"][ri], state["handicaps"]
+    r, handicaps = state["rounds"][ri], round_handicaps(state, ri)
     rows = r["teamScores" if ri == 3 else "scores"]
     common = [all(played(s[i]) for s in rows) for i in range(18)]
     values = [0] * (4 if ri == 2 else 2)
@@ -89,7 +94,13 @@ def competition(state, ri):
 
 def relevant(change, ri):
     path = change["path"]
-    return (path[:2] == ["state", "handicaps"] and ri != 3) or (
+    if path[:2] == ["state", "handicaps"]:
+        if ri == 3:
+            return False
+        # Old scalar edits affected every round. New rows/cells affect one round.
+        legacy = len(path) == 3 and not isinstance(change["before"], list) and not isinstance(change["after"], list)
+        return len(path) == 2 or legacy or path[2] == ri
+    return (
         len(path) > 3 and path[:3] == ["state", "rounds", ri]
         and path[3] in ({"teamScores", "pars", "verified", "ctp", "tee"} if ri == 3
                        else {"scores", "pars", "indexes", "verified", "ctp", "tee"}))
@@ -139,7 +150,7 @@ def build_source(events, final_state, ri, through_sequence):
             facts.append({"player": p if ri != 3 else None, "team": p if ri == 3 else None,
                           "gross": gross, "versusPar": delta,
                           "grossResult": {-3: "albatross", -2: "eagle", -1: "birdie", 0: "par", 1: "bogey", 2: "double bogey"}.get(delta, f"{delta:+} to par"),
-                          "scoring": hole(gross, r["pars"][i], r["indexes"][i], final_state["handicaps"][p]) if ri != 3 else None})
+                          "scoring": hole(gross, r["pars"][i], r["indexes"][i], round_handicaps(final_state, ri)[p]) if ri != 3 else None})
         order.append({"hole": i + 1, "par": r["pars"][i], "scores": facts, "standingsThroughHole": result})
         if ri == 0 and clinched is None and abs(result["totals"][0] - result["totals"][1]) > 17 - i:
             clinched = i + 1

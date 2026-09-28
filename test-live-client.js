@@ -4,7 +4,7 @@ const vm = require('vm');
 const {JSDOM} = require('jsdom');
 const clone = value => JSON.parse(JSON.stringify(value));
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-const blank = () => ({handicaps:[0,0,0,0], rounds:Array.from({length:4}, () => ({scores:Array.from({length:4},()=>Array(18).fill(null)),teamScores:Array.from({length:2},()=>Array(18).fill(null)),pars:Array(18).fill(4),indexes:Array.from({length:18},(_,i)=>i+1),verified:false,ctp:null}))});
+const blank = () => ({handicaps:Array.from({length:4},()=>[0,0,0,0]), rounds:Array.from({length:4}, () => ({scores:Array.from({length:4},()=>Array(18).fill(null)),teamScores:Array.from({length:2},()=>Array(18).fill(null)),pars:Array(18).fill(4),indexes:Array.from({length:18},(_,i)=>i+1),verified:false,ctp:null}))});
 
 async function main() {
   const courses = JSON.parse(fs.readFileSync('course_defaults.json','utf8'));
@@ -55,42 +55,49 @@ async function main() {
     await tick(); await tick();
     return {dom,w,context,document:w.document};
   }
-  const old = blank(); old.handicaps[0]=40;old.rounds[0].scores[0][0]=8;
+  const old = blank(); old.handicaps=[40,0,0,0];old.rounds[0].scores[0][0]=8;
   const editor=await client(old), viewer=await client();
   const click=(c,selector)=>c.document.querySelector(selector).click();
   const change=(c,selector,value)=>{const input=c.document.querySelector(selector);input.value=value;input.dispatchEvent(new c.w.Event('change',{bubbles:true}));};
   click(editor,'[data-page="players"]');await tick();
-  assert.equal(editor.document.querySelector('#hcp-0').value,'0','Server data must win over legacy browser scores');
-  assert(editor.document.querySelector('#hcp-0').disabled);
-  change(editor,'#hcp-0','22');assert.equal(writes.length,0,'Synthetic viewer edits must also be ignored');
+  assert.equal(editor.document.querySelector('#hcp-0-0').value,'0','Server data must win over legacy browser scores');
+  assert(editor.document.querySelector('#hcp-0-0').disabled);
+  change(editor,'#hcp-0-0','22');assert.equal(writes.length,0,'Synthetic viewer edits must also be ignored');
   click(editor,'[data-action="login"]');
   editor.document.querySelector('#login-name').value='admin';editor.document.querySelector('#login-password').value='test';
   editor.document.querySelector('#login-form').dispatchEvent(new editor.w.Event('submit',{bubbles:true,cancelable:true}));
   await tick();await tick();
-  assert(!editor.document.querySelector('#hcp-0').disabled);
+  assert(!editor.document.querySelector('#hcp-0-0').disabled);
   assert(!editor.document.querySelector('[data-action="migrate"]').hidden);
   click(viewer,'[data-page="players"]');await tick();
-  change(editor,'#hcp-0','18');await tick();await tick();
-  assert.equal(viewer.document.querySelector('#hcp-0').value,'18');
-  assert(viewer.document.querySelector('#hcp-0').disabled,'SSE must not grant admin permissions');
+  change(editor,'#hcp-0-0','18');await tick();await tick();
+  assert.equal(viewer.document.querySelector('#hcp-0-0').value,'18');
+  assert(viewer.document.querySelector('#hcp-0-0').disabled,'SSE must not grant admin permissions');
   assert.equal(editor.w.localStorage.getItem('portugal2026-v1'),JSON.stringify(old),'Keep the legacy backup');
+  assert.equal(editor.document.querySelectorAll('[data-hcp]').length,16);
+  change(editor,'#hcp-0-1','27');await tick();await tick();
+  assert.equal(snapshot.state.handicaps[1][0],27);
+  assert.equal(snapshot.state.handicaps[0][0],18);
+  assert.equal(snapshot.state.handicaps[2][0],0);
+  assert.equal(viewer.document.querySelector('#hcp-0-1').value,'27');
+  assert(viewer.document.querySelector('#hcp-0-1').disabled);
   // Serialize fast entry while responses are delayed, preserving every accepted value.
   let release;hold=new Promise(resolve=>release=resolve);
-  change(editor,'#hcp-1','8');change(editor,'#hcp-2','10');release();await tick();await tick();
-  assert.deepEqual(snapshot.state.handicaps,[18,8,10,0]);
+  change(editor,'#hcp-1-0','8');change(editor,'#hcp-2-0','10');release();await tick();await tick();
+  assert.deepEqual(snapshot.state.handicaps[0],[18,8,10,0]);
   assert.equal(writes.at(-1).version,writes.at(-2).version+1);
   // A lost success response retries the same identifier without duplicating a save.
   failure='network';const priorVersion=snapshot.version;
-  change(editor,'#hcp-3','11');await tick();await tick();
+  change(editor,'#hcp-3-0','11');await tick();await tick();
   assert.equal(writes.at(-1).requestId,writes.at(-2).requestId);
   assert.equal(snapshot.version,priorVersion+1);
   // Remote changes must not destroy an in-progress field or hide conflicts.
-  const active=editor.document.querySelector('#hcp-0');active.focus();active.value='20';
-  snapshot={...snapshot,state:clone(snapshot.state),version:snapshot.version+1,sequence:snapshot.sequence+1};snapshot.state.handicaps[0]=19;push();
-  assert.equal(editor.document.querySelector('#hcp-0').value,'20');
+  const active=editor.document.querySelector('#hcp-0-0');active.focus();active.value='20';
+  snapshot={...snapshot,state:clone(snapshot.state),version:snapshot.version+1,sequence:snapshot.sequence+1};snapshot.state.handicaps[0][0]=19;push();
+  assert.equal(editor.document.querySelector('#hcp-0-0').value,'20');
   failure='conflict';active.dispatchEvent(new editor.w.Event('change',{bubbles:true}));await tick();await tick();
-  assert.equal(editor.document.querySelector('#hcp-0').value,'19');
-  assert.equal(JSON.parse(editor.w.localStorage.getItem('portugal2026-unsaved-draft')).handicaps[0],20);
+  assert.equal(editor.document.querySelector('#hcp-0-0').value,'19');
+  assert.equal(JSON.parse(editor.w.localStorage.getItem('portugal2026-unsaved-draft')).handicaps[0][0],20);
   assert(!editor.document.querySelector('[data-action="draft"]').hidden);
   click(editor,'[data-page="scorecard"]');await tick();
   change(editor,'#course-tee','ombria-53');await tick();await tick();

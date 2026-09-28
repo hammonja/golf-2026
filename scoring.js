@@ -1,5 +1,7 @@
 (function (root) {
   const played = value => Number.isInteger(value) && value >= 1 && value <= 30;
+  // Historical backups used one player array; current data has one array per round.
+  const roundHandicaps = (handicaps, ri) => Array.isArray(handicaps[ri]) ? handicaps[ri] : handicaps;
   function strokes(handicap, index) {
     const h = Math.round(handicap);
     return Math.floor(h / 18) + (index <= ((h % 18) + 18) % 18 ? 1 : 0);
@@ -51,7 +53,7 @@
       players[p].breakdown.push({ label, amount, final });
     };
     let started = false;
-    const results = rounds.map((r,i) => competition(r,handicaps,teams[i],formats[i]));
+    const results = rounds.map((r,i) => competition(r,roundHandicaps(handicaps,i),teams[i],formats[i]));
     results.forEach((result,i) => {
       if (!result.holes) return;
       started = true;
@@ -87,10 +89,11 @@ function standings(data, players, teams, formats) {
   data.rounds.forEach((r, ri) => {
     if (r.ctp !== null) { rows[r.ctp].bonus++; rows[r.ctp].points++; }
     if (ri === 3) return;
-    const playerTotals = players.map((_, p) => totals(r, p, data.handicaps[p]));
+    const handicaps = roundHandicaps(data.handicaps, ri);
+    const playerTotals = players.map((_, p) => totals(r, p, handicaps[p]));
     // Rank live standings only on holes scored by all four players.
     const common = r.pars.map((_, i) => r.scores.every(s => played(s[i])));
-    const comparable = players.map((_, p) => r.scores[p].reduce((sum, g, i) => sum + (common[i] ? hole(g, r.pars[i], r.indexes[i], data.handicaps[p]).points : 0), 0));
+    const comparable = players.map((_, p) => r.scores[p].reduce((sum, g, i) => sum + (common[i] ? hole(g, r.pars[i], r.indexes[i], handicaps[p]).points : 0), 0));
     const points = common.some(Boolean) ? placingPoints(comparable) : [0, 0, 0, 0];
     rows.forEach((row, p) => { const t = playerTotals[p]; row.gross += t.gross; row.net += t.net; row.stable += t.points; row.holes += t.holes; row.points += points[p]; row.round.push({ ...t, ranking: points[p] }); });
   });
@@ -99,7 +102,7 @@ function standings(data, players, teams, formats) {
   rows.forEach(row => row.earnings = winnings.players[row.p]);
   return rows;
 }
-  const api = { played, strokes, hole, totals, placingPoints, competition, earnings, standings };
+  const api = { played, roundHandicaps, strokes, hole, totals, placingPoints, competition, earnings, standings };
   if (typeof module !== 'undefined') module.exports = api;
   else root.Golf = api;
 })(typeof window === 'undefined' ? globalThis : window);

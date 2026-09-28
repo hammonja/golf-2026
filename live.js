@@ -54,7 +54,7 @@ const Live = (() => {
     }
     if (!force && snapshot.sequence <= sequence && ready) { access(); return; }
     version = snapshot.version; sequence = snapshot.sequence;
-    data = clone(snapshot.state); lastSubmitted = clone(data); courseLibrary = snapshot.courses; ready = true;
+    data = normalizeState(snapshot.state); lastSubmitted = clone(data); courseLibrary = snapshot.courses; ready = true;
     roundSummaries = clone(snapshot.summaries || [null, null, null, null]); summaryBasis = clone(snapshot.state);
     if (typeof Media !== 'undefined') Media.observe(snapshot);
     updateRankMovement();
@@ -96,7 +96,7 @@ const Live = (() => {
         version = snapshot.version; sequence = Math.max(sequence, snapshot.sequence);
         queue.shift();
         if (!queue.length) {
-          data = clone(snapshot.state); lastSubmitted = clone(data); courseLibrary = snapshot.courses;
+          data = normalizeState(snapshot.state); lastSubmitted = clone(data); courseLibrary = snapshot.courses;
           roundSummaries = clone(snapshot.summaries || [null, null, null, null]); summaryBasis = clone(snapshot.state);
           decorateRoundReports();
           if (typeof Media !== 'undefined') Media.observe(snapshot);
@@ -193,8 +193,8 @@ const Live = (() => {
     if (name === 'draft' && admin && draft) download(draft, 'portugal-2026-unsaved-draft.json');
     if (name === 'migrate' && canEdit() && legacy && valid(legacy)) {
       const holes = legacy.rounds.reduce((sum,r) => sum + r.scores.flat().filter(Golf.played).length + r.teamScores.flat().filter(Golf.played).length, 0);
-      if (confirm(`Import this browser's previous backup (${holes} entered scores; handicaps ${legacy.handicaps.join(', ')})? This replaces the shared scores and settings for everyone and is recorded in history.`)) {
-        data = clone(legacy); save('browser.imported'); render();
+      if (confirm(`Import this browser's previous backup (${holes} entered scores; ${Array.isArray(legacy.handicaps[0]) ? 'handicaps for all four rounds' : `handicaps ${legacy.handicaps.join(', ')} copied to all four rounds`})? This replaces the shared scores and settings for everyone and is recorded in history.`)) {
+        data = normalizeState(legacy); save('browser.imported'); render();
       }
     }
   }

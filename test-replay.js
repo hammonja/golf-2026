@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory() as folder:
     save()
     state['rounds'][0]['scores'][0][0]=None
     save()
-    state['handicaps'][3]=18
+    state['handicaps'][0][3]=18
     save('backup.imported')
     course=store.snapshot()['courses'][0]
     tee=copy.deepcopy(course['tees'][0]);tee['name']='Custom tee'

@@ -39,7 +39,7 @@ for (const view of ['dashboard','scorecard','players','rules']) {
 }
 vm.runInContext(`data.rounds[0].scores.forEach((s,p)=>s[0]=p+3);`,context);
 assert.equal(vm.runInContext('overall()[0].points',context),4);
-vm.runInContext('data.handicaps[3]=54;',context);
+vm.runInContext('data.handicaps[0][3]=54;',context);
 assert.equal(vm.runInContext('overall()[0].points',context),3.5);
 vm.runInContext('data.rounds[3].ctp=3;',context);
 assert.equal(vm.runInContext('overall()[0].p',context),3);
@@ -117,7 +117,7 @@ assert.equal(vm.runInContext('previousRanks',context),null);
 vm.runInContext('data.rounds[0].scores.forEach((s,p)=>s[0]=p+3);save();',context);
 assert.equal(vm.runInContext('rankMovement.join(",")',context),'0,0,0,0');
 assert.equal(vm.runInContext('overall().map(r=>r.p).join(",")',context),'0,1,2,3');
-vm.runInContext('data.handicaps[3]=54;save();',context);
+vm.runInContext('data.handicaps[0][3]=54;save();',context);
 assert.equal(vm.runInContext('rankMovement.join(",")',context),'0,-1,-1,3');
 assert.equal(vm.runInContext('overall().map(r=>r.p).join(",")',context),'0,3,1,2');
 assert(vm.runInContext('movementMarkup(3)',context).includes('rank-up'));
@@ -131,9 +131,9 @@ vm.runInContext('data=empty();save();',context);
 assert.equal(vm.runInContext('rankMovement.join(",")',context),'0,0,0,0');
 console.log('Leaderboard checks passed: automatic ordering, shared ranks, up/down movement, bonuses and reset.');
 context.seedCourses=JSON.parse(fs.readFileSync('course_defaults.json','utf8'));
-vm.runInContext('data=empty();courseLibrary=seedCourses;data.rounds[0].scores[0][0]=6;data.handicaps[0]=18;data.rounds[0].ctp=0;applyTee(0,courseLibrary[0].tees[0]);',context);
+vm.runInContext('data=empty();courseLibrary=seedCourses;data.rounds[0].scores[0][0]=6;data.handicaps[0][0]=18;data.rounds[0].ctp=0;applyTee(0,courseLibrary[0].tees[0]);',context);
 assert.equal(vm.runInContext('data.rounds[0].scores[0][0]',context),6);
-assert.equal(vm.runInContext('data.handicaps[0]',context),18);
+assert.equal(vm.runInContext('data.handicaps[0][0]',context),18);
 assert.equal(vm.runInContext('data.rounds[0].ctp',context),null);
 assert.equal(vm.runInContext('data.rounds[0].pars.lastIndexOf(3)',context),16);
 assert.equal(vm.runInContext('teeDistance(0,0)',context),'428 m');
@@ -147,3 +147,34 @@ assert(vm.runInContext('courseSelection(0)',context).includes('5,350'));
 assert(vm.runInContext('courseLibrarySetup(0)',context).includes('data-course-upload="map"'));
 assert(vm.runInContext('escapeHTML("<script>")',context).includes('&lt;script&gt;'));
 console.log('Course checks passed: tee selection, preserved scores/handicaps, correct pin hole, distances and backup validation.');
+
+// Different playing handicaps must stay isolated by round everywhere they are used.
+vm.runInContext('data=empty();data.rounds.forEach(r=>{r.scores.forEach(s=>s.fill(4));r.teamScores.forEach(s=>s.fill(4));r.verified=true;});data.handicaps[0][0]=18;data.handicaps[1][1]=36;data.handicaps[2][2]=54;',context);
+const results=vm.runInContext('overall()',context);
+assert.deepEqual(results.map(r=>[r.p,r.net,r.stable,r.points]),[[0,198,126,8],[1,180,144,8],[2,162,162,8],[3,216,108,6]]);
+assert.deepEqual(Array.from(results.find(r=>r.p===0).round,r=>r.points),[54,36,36]);
+assert.deepEqual(Array.from(results.find(r=>r.p===1).round,r=>r.points),[36,72,36]);
+assert.deepEqual(Array.from(results.find(r=>r.p===2).round,r=>r.points),[36,36,90]);
+for(const [ri,expected] of [[0,[18,0]], [1,[72,36]], [2,[36,36,90,36]]]) {
+  context.testRound=ri;
+  assert.deepEqual(Array.from(vm.runInContext('Golf.competition(data.rounds[testRound],roundHandicaps(testRound),TEAMS[testRound],FORMATS[testRound]).totals',context)),expected);
+}
+assert(results.find(r=>r.p===1).earnings.breakdown.some(b=>b.label==='Round 2' && b.amount===20));
+assert(!results.find(r=>r.p===0).earnings.breakdown.some(b=>b.label==='Round 2'));
+const original=JSON.stringify(results);
+vm.runInContext('data.handicaps[3]=[54,-10,36,18];',context);
+assert.equal(JSON.stringify(vm.runInContext('overall()',context)),original,'Gross scramble handicaps cannot change results');
+vm.runInContext('selected=1;scorecard();',context);
+assert(app.innerHTML.includes('<small>HCP 36</small>'));
+assert.equal(vm.runInContext('mobileScoreLabel(1,0)',context),'2 net · 4 pts');
+assert(vm.runInContext('mobileHoleEditor()',context).includes('HCP 36'));
+vm.runInContext('selected=0;',context);
+assert.equal(vm.runInContext('mobileScoreLabel(1,0)',context),'4 net · 2 pts');
+vm.runInContext('players();',context);
+assert.equal((app.innerHTML.match(/data-hcp-round=/g)||[]).length,16);
+assert.equal(vm.runInContext('valid({...empty(),handicaps:[9,18,-2,36]})',context),true);
+assert.equal(vm.runInContext('valid({...empty(),handicaps:[9,[0,0,0,0],0,0]})',context),false);
+vm.runInContext('data=normalizeState({...empty(),handicaps:[9,18,-2,36]});data.handicaps[1][0]=20;',context);
+assert.equal(vm.runInContext('data.handicaps[0][0]',context),9);
+assert.equal(vm.runInContext('data.handicaps[1][0]',context),20);
+console.log('Round handicap checks passed: isolated scoring, standings, winnings, desktop/mobile scorecards and legacy backup conversion.');

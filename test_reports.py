@@ -89,7 +89,7 @@ class ReportTests(unittest.TestCase):
         self.save()
         self.live.audit("auth.login")
         self.assertFalse(self.reports.run_once())
-        self.state["handicaps"][0] = 18
+        self.state["handicaps"][0][0] = 18
         summaries = self.save()["summaries"]
         self.assertEqual(summaries[0]["status"], "pending")
         self.assertNotIn("report", summaries[0])
@@ -254,14 +254,14 @@ class ProviderAndFactsTests(unittest.TestCase):
         states = []
         for _ in range(30):
             state = empty_state()
-            state["handicaps"] = [rng.choice([-9.5, -1.5, 0, 8.5, 18, 36, 54]) for _ in range(4)]
+            state["handicaps"] = [[rng.choice([-9.5, -1.5, 0, 8.5, 18, 36, 54]) for _ in range(4)] for _ in range(4)]
             for r in state["rounds"]:
                 r["pars"] = [rng.choice([3, 4, 5]) for _ in range(18)]
                 rng.shuffle(r["indexes"])
                 r["scores"] = [[rng.choice([None, 2, 3, 4, 5, 6, 9]) for _ in range(18)] for _ in range(4)]
                 r["teamScores"] = [[rng.choice([None, 2, 3, 4, 5]) for _ in range(18)] for _ in range(2)]
             states.append(state)
-        script = "const G=require('./scoring');let s='';process.stdin.on('data',x=>s+=x);process.stdin.on('end',()=>console.log(JSON.stringify(JSON.parse(s).map(d=>d.rounds.map((r,i)=>G.competition(r,d.handicaps,[[[0,3],[2,1]],[[1,3],[2,0]],[],[[3,2],[0,1]]][i],['match','best','solo','scramble'][i]))))));"
+        script = "const G=require('./scoring');let s='';process.stdin.on('data',x=>s+=x);process.stdin.on('end',()=>console.log(JSON.stringify(JSON.parse(s).map(d=>d.rounds.map((r,i)=>G.competition(r,G.roundHandicaps(d.handicaps,i),[[[0,3],[2,1]],[[1,3],[2,0]],[],[[3,2],[0,1]]][i],['match','best','solo','scramble'][i]))))));"
         result = subprocess.run(["node", "-e", script], input=json.dumps(states), text=True, capture_output=True, check=True, timeout=15)
         expected = json.loads(result.stdout)
         for state, rounds in zip(states, expected):
